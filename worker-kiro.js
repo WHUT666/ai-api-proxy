@@ -265,39 +265,85 @@ async function refreshKiroToken(env, accountId) {
   }
 
   try {
-    // 如果有 OIDC 认证信息（Builder ID / GitHub / Google）
-    if (account.clientId && account.clientSecret && account.refreshToken) {
-      // OIDC Token 刷新
-      const tokenUrl = 'https://oidc.codewhisperer.amazonaws.com/token';
+    const region = account.region || 'us-east-1';
+    
+    // 判断认证方式：social (GitHub/Google) 还是 OIDC (BuilderId/IdC)
+    const authMethod = account.authMethod || 'oidc';
+    
+    // 方式1：社交登录刷新（GitHub/Google）
+    if (authMethod === 'social' && account.refreshToken) {
+      const tokenUrl = 'https://prod.us-east-1.auth.desktop.kiro.dev/refreshToken';
       
       const response = await fetch(tokenUrl, {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
+          'Content-Type': 'application/json',
+          'User-Agent': 'AWS-Toolkit-For-VSCode/3.148.0'
         },
-        body: new URLSearchParams({
-          grant_type: 'refresh_token',
-          client_id: account.clientId,
-          client_secret: account.clientSecret,
-          refresh_token: account.refreshToken,
+        body: JSON.stringify({
+          refreshToken: account.refreshToken
         })
       });
 
       if (!response.ok) {
-        throw new Error(`Token refresh failed: ${response.status}`);
+        const errorText = await response.text();
+        throw new Error(`Social token refresh failed: ${response.status} - ${errorText}`);
       }
 
       const data = await response.json();
       
       // 更新账号信息
       await updateAccount(env, accountId, {
-        accessToken: data.access_token,
-        idToken: data.id_token,
-        refreshToken: data.refresh_token || account.refreshToken,
-        expiresAt: Date.now() + (data.expires_in || 3600) * 1000
+        accessToken: data.accessToken,
+        refreshToken: data.refreshToken || account.refreshToken,
+        expiresAt: Date.now() + (data.expiresIn || 3600) * 1000
       });
 
-      return { success: true, message: 'Token refreshed successfully' };
+      return { 
+        success: true, 
+        message: 'Social token refreshed successfully',
+        accessToken: data.accessToken
+      };
+    }
+    
+    // 方式2：OIDC 刷新（BuilderId / IAM Identity Center）
+    if (account.clientId && account.clientSecret && account.refreshToken) {
+      // 正确的 OIDC 端点（根据区域）
+      const tokenUrl = `https://oidc.${region}.amazonaws.com/token`;
+      
+      const response = await fetch(tokenUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          clientId: account.clientId,
+          clientSecret: account.clientSecret,
+          refreshToken: account.refreshToken,
+          grantType: 'refresh_token'
+        })
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`OIDC token refresh failed: ${response.status} - ${errorText}`);
+      }
+
+      const data = await response.json();
+      
+      // 更新账号信息
+      await updateAccount(env, accountId, {
+        accessToken: data.accessToken,
+        refreshToken: data.refreshToken || account.refreshToken,
+        idToken: data.idToken,
+        expiresAt: Date.now() + (data.expiresIn || 3600) * 1000
+      });
+
+      return { 
+        success: true, 
+        message: 'OIDC token refreshed successfully',
+        accessToken: data.accessToken
+      };
     }
     
     // SSO Token 需要重新登录，无法自动刷新
@@ -308,8 +354,10 @@ async function refreshKiroToken(env, accountId) {
       };
     }
 
-    return { success: false, error: 'No refresh method available' };
+    return { success: false, error: 'No refresh method available (missing clientId/clientSecret/refreshToken)' };
   } catch (error) {
+    // 标记账号需要刷新
+    await markAccountNeedsRefresh(env, accountId);
     return { success: false, error: error.message };
   }
 }
