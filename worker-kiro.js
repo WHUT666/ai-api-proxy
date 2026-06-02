@@ -355,7 +355,7 @@ async function markAccountNeedsRefresh(env, accountId) {
   }
 }
 
-// 管理接口：添加 Kiro 账号
+// 管理接口
 async function handleAdminRequest(request, env, path) {
   const authHeader = request.headers.get('Authorization');
   const adminKey = env.ADMIN_KEY || 'admin-secret-key';
@@ -366,35 +366,205 @@ async function handleAdminRequest(request, env, path) {
 
   const method = request.method;
 
-  // POST /admin/accounts/kiro - 添加 Kiro 账号
-  if (path === '/admin/accounts/kiro' && method === 'POST') {
-    const data = await request.json();
-    
-    const account = {
-      id: crypto.randomUUID(),
-      email: data.email,
-      provider: 'kiro',
-      enabled: true,
-      createdAt: Date.now(),
-      region: data.region || 'us-east-1',
+  // GET /admin/accounts - 获取所有账号
+  if (path === '/admin/accounts' && method === 'GET') {
+    try {
+      const accounts = [];
+      const list = await env.ACCOUNTS.list();
       
-      // 根据认证类型设置字段
-      ...(data.ssoToken && { ssoToken: data.ssoToken }),
-      ...(data.accessToken && { accessToken: data.accessToken }),
-      ...(data.refreshToken && { refreshToken: data.refreshToken }),
-      ...(data.clientId && { clientId: data.clientId }),
-      ...(data.clientSecret && { clientSecret: data.clientSecret }),
-      ...(data.idToken && { idToken: data.idToken }),
-      ...(data.expiresAt && { expiresAt: data.expiresAt }),
-    };
-    
-    await env.ACCOUNTS.put(account.id, JSON.stringify(account));
-    
-    const { ssoToken, accessToken, refreshToken, clientSecret, ...safeData } = account;
-    return jsonResponse({ success: true, account: safeData });
+      for (const key of list.keys) {
+        const account = await env.ACCOUNTS.get(key.name);
+        if (account) {
+          const parsed = JSON.parse(account);
+          // 移除敏感信息
+          const { ssoToken, accessToken, refreshToken, clientSecret, ...safeData } = parsed;
+          accounts.push(safeData);
+        }
+      }
+      
+      return jsonResponse({ success: true, accounts });
+    } catch (error) {
+      return jsonResponse({ error: error.message }, 500);
+    }
   }
 
-  // 其他管理接口...
+  // GET /admin/stats - 获取统计信息
+  if (path === '/admin/stats' && method === 'GET') {
+    try {
+      const stats = await env.STATS.get('global');
+      return jsonResponse({ 
+        success: true, 
+        stats: stats ? JSON.parse(stats) : { totalRequests: 0, successRate: 0 }
+      });
+    } catch (error) {
+      return jsonResponse({ error: error.message }, 500);
+    }
+  }
+
+  // POST /admin/accounts/kiro - 添加 Kiro 账号
+  if (path === '/admin/accounts/kiro' && method === 'POST') {
+    try {
+      const data = await request.json();
+      
+      const account = {
+        id: crypto.randomUUID(),
+        email: data.email,
+        provider: 'kiro',
+        enabled: true,
+        createdAt: Date.now(),
+        region: data.region || 'us-east-1',
+        
+        // 根据认证类型设置字段
+        ...(data.ssoToken && { ssoToken: data.ssoToken }),
+        ...(data.accessToken && { accessToken: data.accessToken }),
+        ...(data.refreshToken && { refreshToken: data.refreshToken }),
+        ...(data.clientId && { clientId: data.clientId }),
+        ...(data.clientSecret && { clientSecret: data.clientSecret }),
+        ...(data.idToken && { idToken: data.idToken }),
+        ...(data.expiresAt && { expiresAt: data.expiresAt }),
+      };
+      
+      await env.ACCOUNTS.put(account.id, JSON.stringify(account));
+      
+      const { ssoToken, accessToken, refreshToken, clientSecret, ...safeData } = account;
+      return jsonResponse({ success: true, account: safeData });
+    } catch (error) {
+      return jsonResponse({ error: error.message }, 500);
+    }
+  }
+
+  // POST /admin/accounts/kiro/batch - 批量导入 Kiro 账号
+  if (path === '/admin/accounts/kiro/batch' && method === 'POST') {
+    try {
+      const data = await request.json();
+      const accounts = Array.isArray(data) ? data : [data];
+      
+      const results = {
+        success: [],
+        failed: [],
+        total: accounts.length
+      };
+      
+      for (const accountData of accounts) {
+        try {
+          // 验证必填字段
+          if (!accountData.email) {
+            results.failed.push({
+              email: accountData.email || 'unknown',
+              error: 'Email is required'
+            });
+            continue;
+          }
+          
+          // 检查是否已存在
+          const existingAccounts = await env.ACCOUNTS.list();
+          let isDuplicate = false;
+          for (const key of existingAccounts.keys) {
+            const existing = await env.ACCOUNTS.get(key.name);
+            if (existing) {
+              const parsed = JSON.parse(existing);
+              if (parsed.email === accountData.email && parsed.provider === 'kiro') {
+                isDuplicate = true;
+                break;
+              }
+            }
+          }
+          
+          if (isDuplicate) {
+            results.failed.push({
+              email: accountData.email,
+              error: 'Account already exists'
+            });
+            continue;
+          }
+          
+          // 创建账号
+          const account = {
+            id: crypto.randomUUID(),
+            email: accountData.email,
+            provider: 'kiro',
+            enabled: accountData.enabled !== false,
+            createdAt: Date.now(),
+            region: accountData.region || 'us-east-1',
+            
+            // 根据认证类型设置字段
+            ...(accountData.ssoToken && { ssoToken: accountData.ssoToken }),
+            ...(accountData.accessToken && { accessToken: accountData.accessToken }),
+            ...(accountData.refreshToken && { refreshToken: accountData.refreshToken }),
+            ...(accountData.clientId && { clientId: accountData.clientId }),
+            ...(accountData.clientSecret && { clientSecret: accountData.clientSecret }),
+            ...(accountData.idToken && { idToken: accountData.idToken }),
+            ...(accountData.expiresAt && { expiresAt: accountData.expiresAt }),
+          };
+          
+          await env.ACCOUNTS.put(account.id, JSON.stringify(account));
+          
+          results.success.push({
+            email: account.email,
+            id: account.id
+          });
+        } catch (error) {
+          results.failed.push({
+            email: accountData.email || 'unknown',
+            error: error.message
+          });
+        }
+      }
+      
+      return jsonResponse({
+        success: true,
+        results,
+        message: `Imported ${results.success.length} accounts, ${results.failed.length} failed`
+      });
+    } catch (error) {
+      return jsonResponse({ error: error.message }, 500);
+    }
+  }
+
+  // DELETE /admin/accounts/:id - 删除账号
+  if (path.startsWith('/admin/accounts/') && method === 'DELETE') {
+    try {
+      const accountId = path.split('/').pop();
+      await env.ACCOUNTS.delete(accountId);
+      return jsonResponse({ success: true, message: 'Account deleted' });
+    } catch (error) {
+      return jsonResponse({ error: error.message }, 500);
+    }
+  }
+
+  // PUT /admin/accounts/:id - 更新账号
+  if (path.startsWith('/admin/accounts/') && method === 'PUT') {
+    try {
+      const accountId = path.split('/').pop();
+      const data = await request.json();
+      const account = await getAccount(env, accountId);
+      
+      if (!account) {
+        return jsonResponse({ error: 'Account not found' }, 404);
+      }
+      
+      // 更新字段
+      Object.assign(account, data);
+      await env.ACCOUNTS.put(accountId, JSON.stringify(account));
+      
+      const { ssoToken, accessToken, refreshToken, clientSecret, ...safeData } = account;
+      return jsonResponse({ success: true, account: safeData });
+    } catch (error) {
+      return jsonResponse({ error: error.message }, 500);
+    }
+  }
+
+  // POST /admin/accounts/:id/refresh - 刷新 Token
+  if (path.match(/^\/admin\/accounts\/[^\/]+\/refresh$/) && method === 'POST') {
+    try {
+      const accountId = path.split('/')[3];
+      const result = await refreshKiroToken(env, accountId);
+      return jsonResponse(result);
+    } catch (error) {
+      return jsonResponse({ error: error.message }, 500);
+    }
+  }
+
   return jsonResponse({ error: 'Not implemented' }, 404);
 }
 

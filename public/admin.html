@@ -385,6 +385,56 @@
                 </form>
             </div>
 
+            <!-- 批量导入 OIDC JSON -->
+            <div class="card">
+                <h2>📦 批量导入 OIDC JSON</h2>
+                <p style="margin-bottom: 15px; color: #666;">
+                    批量导入多个 OIDC 账号，支持 JSON 数组格式。参考 Kiro-account-manager 的导出格式。
+                </p>
+                
+                <div class="form-group">
+                    <label>JSON 数据</label>
+                    <textarea id="batchImportJson" placeholder='[
+  {
+    "email": "user1@example.com",
+    "region": "us-east-1",
+    "clientId": "your-client-id-1",
+    "clientSecret": "your-client-secret-1",
+    "refreshToken": "your-refresh-token-1",
+    "accessToken": "current-access-token-1"
+  },
+  {
+    "email": "user2@example.com",
+    "region": "us-east-1",
+    "clientId": "your-client-id-2",
+    "clientSecret": "your-client-secret-2",
+    "refreshToken": "your-refresh-token-2"
+  }
+]' style="min-height: 200px;"></textarea>
+                    <p class="help-text">
+                        支持单个对象或数组格式。必填字段：email, clientId, clientSecret, refreshToken<br>
+                        可选字段：region (默认 us-east-1), accessToken, idToken, expiresAt, enabled
+                    </p>
+                </div>
+
+                <div style="display: flex; gap: 10px;">
+                    <button type="button" class="btn btn-primary" onclick="importBatchAccounts()">
+                        批量导入
+                    </button>
+                    <button type="button" class="btn" onclick="validateBatchJson()" style="background: #48bb78; color: white;">
+                        验证 JSON
+                    </button>
+                    <button type="button" class="btn" onclick="clearBatchJson()">
+                        清空
+                    </button>
+                </div>
+
+                <div id="batchImportResult" style="margin-top: 15px; display: none;">
+                    <h3 style="color: #333; margin-bottom: 10px;">导入结果</h3>
+                    <div id="batchImportResultContent"></div>
+                </div>
+            </div>
+
             <div class="card">
                 <h2>📖 如何获取 Kiro Token？</h2>
                 <p style="margin-bottom: 10px;">Kiro Token 位于配置文件中，路径取决于操作系统：</p>
@@ -678,6 +728,119 @@ const response = await fetch(
             } catch (error) {
                 // Error already shown
             }
+        }
+
+        // 验证批量导入 JSON
+        function validateBatchJson() {
+            const jsonText = document.getElementById('batchImportJson').value.trim();
+            
+            if (!jsonText) {
+                showAlert('请输入 JSON 数据', 'error');
+                return false;
+            }
+            
+            try {
+                const data = JSON.parse(jsonText);
+                const accounts = Array.isArray(data) ? data : [data];
+                
+                let errors = [];
+                accounts.forEach((acc, idx) => {
+                    if (!acc.email) errors.push(`账号 ${idx + 1}: 缺少 email`);
+                    if (!acc.clientId && !acc.ssoToken) errors.push(`账号 ${idx + 1}: 缺少 clientId 或 ssoToken`);
+                    if (acc.clientId && !acc.clientSecret) errors.push(`账号 ${idx + 1}: 缺少 clientSecret`);
+                    if (acc.clientId && !acc.refreshToken) errors.push(`账号 ${idx + 1}: 缺少 refreshToken`);
+                });
+                
+                if (errors.length > 0) {
+                    showAlert('验证失败: ' + errors.join('; '), 'error');
+                    return false;
+                }
+                
+                showAlert(`验证成功！共 ${accounts.length} 个账号`, 'success');
+                return true;
+            } catch (error) {
+                showAlert('JSON 格式错误: ' + error.message, 'error');
+                return false;
+            }
+        }
+
+        // 批量导入账号
+        async function importBatchAccounts() {
+            if (!validateBatchJson()) return;
+            
+            const jsonText = document.getElementById('batchImportJson').value.trim();
+            
+            try {
+                const data = JSON.parse(jsonText);
+                
+                showAlert('正在导入...', 'info');
+                
+                const result = await apiRequest('/admin/accounts/kiro/batch', {
+                    method: 'POST',
+                    body: JSON.stringify(data)
+                });
+                
+                // 显示导入结果
+                const resultDiv = document.getElementById('batchImportResult');
+                const contentDiv = document.getElementById('batchImportResultContent');
+                
+                let html = `
+                    <div style="padding: 15px; background: #f7fafc; border-radius: 5px;">
+                        <p style="margin-bottom: 10px;">
+                            <strong>总数：</strong>${result.results.total} 个账号<br>
+                            <strong style="color: #48bb78;">成功：</strong>${result.results.success.length} 个<br>
+                            <strong style="color: #f56565;">失败：</strong>${result.results.failed.length} 个
+                        </p>
+                `;
+                
+                if (result.results.success.length > 0) {
+                    html += `
+                        <div style="margin-top: 10px;">
+                            <strong style="color: #48bb78;">成功导入的账号：</strong>
+                            <ul style="margin: 5px 0 0 20px; color: #2d3748;">
+                                ${result.results.success.map(s => `<li>${s.email} (ID: ${s.id.substring(0, 8)}...)</li>`).join('')}
+                            </ul>
+                        </div>
+                    `;
+                }
+                
+                if (result.results.failed.length > 0) {
+                    html += `
+                        <div style="margin-top: 10px;">
+                            <strong style="color: #f56565;">失败的账号：</strong>
+                            <ul style="margin: 5px 0 0 20px; color: #2d3748;">
+                                ${result.results.failed.map(f => `<li>${f.email}: ${f.error}</li>`).join('')}
+                            </ul>
+                        </div>
+                    `;
+                }
+                
+                html += '</div>';
+                
+                contentDiv.innerHTML = html;
+                resultDiv.style.display = 'block';
+                
+                showAlert(result.message, result.results.failed.length === 0 ? 'success' : 'warning');
+                
+                // 刷新账号列表
+                loadKiroAccounts();
+                
+                // 如果全部成功，清空输入
+                if (result.results.failed.length === 0) {
+                    setTimeout(() => {
+                        document.getElementById('batchImportJson').value = '';
+                    }, 2000);
+                }
+            } catch (error) {
+                // Error already shown
+            }
+        }
+
+        // 清空批量导入表单
+        function clearBatchJson() {
+            document.getElementById('batchImportJson').value = '';
+            document.getElementById('batchImportResult').style.display = 'none';
+            showAlert('已清空', 'success');
         }
 
         // 显示提示

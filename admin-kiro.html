@@ -467,12 +467,14 @@ const response = await fetch(
                 <div class="form-group">
                     <label>管理员密钥</label>
                     <input type="password" id="adminKey" placeholder="用于 API 调用认证">
+                    <p class="help-text">此密钥需要与 Worker 环境变量 ADMIN_KEY 一致</p>
                 </div>
                 <div class="form-group">
                     <label>Worker 地址</label>
                     <input type="text" id="workerUrl" placeholder="https://your-worker.workers.dev">
                 </div>
                 <button class="btn btn-success" onclick="saveSettings()">保存设置</button>
+                <button class="btn btn-danger" onclick="logout()" style="margin-left: 10px;">退出登录</button>
             </div>
         </div>
     </div>
@@ -484,12 +486,66 @@ const response = await fetch(
         };
 
         let currentAuthType = 'sso';
+        let isAuthenticated = false;
 
         // 初始化
         document.addEventListener('DOMContentLoaded', () => {
-            loadSettings();
-            loadKiroAccounts();
+            checkAuthentication();
         });
+
+        // 检查认证状态
+        function checkAuthentication() {
+            const savedPassword = localStorage.getItem('adminPassword');
+            
+            if (!savedPassword) {
+                showLoginPrompt();
+            } else {
+                // 验证保存的密码
+                config.adminKey = savedPassword;
+                verifyAuthentication();
+            }
+        }
+
+        // 显示登录提示
+        function showLoginPrompt() {
+            const password = prompt('请输入管理员密码以访问后台：');
+            
+            if (!password) {
+                document.body.innerHTML = '<div style="text-align:center;padding:50px;"><h2>访问被拒绝</h2><p>需要管理员密码才能访问此页面</p></div>';
+                return;
+            }
+            
+            config.adminKey = password;
+            localStorage.setItem('adminPassword', password);
+            verifyAuthentication();
+        }
+
+        // 验证认证
+        async function verifyAuthentication() {
+            try {
+                // 尝试获取账号列表来验证密码
+                const response = await fetch(`${config.workerUrl}/admin/accounts`, {
+                    headers: {
+                        'Authorization': `Bearer ${config.adminKey}`
+                    }
+                });
+                
+                if (response.ok) {
+                    isAuthenticated = true;
+                    loadSettings();
+                    loadKiroAccounts();
+                } else {
+                    // 密码错误
+                    localStorage.removeItem('adminPassword');
+                    alert('密码错误，请重新输入');
+                    showLoginPrompt();
+                }
+            } catch (error) {
+                console.error('认证失败:', error);
+                alert('无法连接到服务器，请检查 Worker 地址');
+                loadSettings();
+            }
+        }
 
         // 切换标签页
         function switchTab(tabName) {
@@ -689,6 +745,15 @@ const response = await fetch(
             setTimeout(() => {
                 alert.classList.remove('show');
             }, 3000);
+        }
+
+        // 退出登录
+        function logout() {
+            if (confirm('确定要退出登录吗？')) {
+                localStorage.removeItem('adminPassword');
+                localStorage.removeItem('adminKey');
+                location.reload();
+            }
         }
     </script>
 </body>
