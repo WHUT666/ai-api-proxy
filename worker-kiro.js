@@ -463,16 +463,29 @@ async function handleKiroChatCompletion(request, env) {
       }, 503);
     }
     
-    // 调试：检查账号是否有 accessToken
+    // 检查账号是否有 accessToken
     if (!account.accessToken && !account.ssoToken) {
-      return jsonResponse({
-        error: 'Account missing token',
-        message: 'Account has no accessToken or ssoToken',
-        accountId: account.id,
-        accountEmail: account.email,
-        hasClientId: !!account.clientId,
-        hasRefreshToken: !!account.refreshToken
-      }, 500);
+      // 尝试刷新 Token
+      const refreshResult = await refreshKiroToken(env, account.id);
+      if (refreshResult.success) {
+        // 重新获取账号
+        const refreshedAccount = await getAccount(env, account.id);
+        if (refreshedAccount && refreshedAccount.accessToken) {
+          Object.assign(account, refreshedAccount);
+        } else {
+          return jsonResponse({
+            error: 'Token refresh succeeded but account still has no accessToken',
+            message: 'Please check KV storage configuration',
+            accountId: account.id
+          }, 500);
+        }
+      } else {
+        return jsonResponse({
+          error: 'Account missing token and refresh failed',
+          message: refreshResult.error,
+          accountId: account.id
+        }, 500);
+      }
     }
 
     // 检查 Token 是否过期
