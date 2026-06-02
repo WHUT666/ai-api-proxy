@@ -1,6 +1,166 @@
 // Cloudflare Workers AI API 代理 - Kiro 增强版
 // 支持 OpenAI, Anthropic, Google Gemini, Amazon Q (Kiro)
 
+// ============ Kiro 格式转换模块 ============
+
+// 模型 ID 映射
+const MODEL_ID_MAP = {
+  // Claude 4.5 系列
+  'claude-sonnet-4-5': 'claude-sonnet-4.5',
+  'claude-sonnet-4.5': 'claude-sonnet-4.5',
+  'claude-haiku-4-5': 'claude-haiku-4.5',
+  'claude-haiku-4.5': 'claude-haiku-4.5',
+  
+  // Claude 4 系列
+  'claude-sonnet-4': 'claude-sonnet-4',
+  'claude-sonnet-4-20250514': 'claude-sonnet-4',
+  
+  // Claude 3.5 系列（映射到 Sonnet 4.5）
+  'claude-3-5-sonnet': 'claude-sonnet-4.5',
+  'claude-3-5-sonnet-20241022': 'claude-sonnet-4.5',
+  'claude-3-opus': 'claude-sonnet-4.5',
+  'claude-3-sonnet': 'claude-sonnet-4',
+  'claude-3-haiku': 'claude-haiku-4.5',
+  
+  // Anthropic 格式
+  'anthropic.claude-3-5-sonnet-20241022-v2:0': 'claude-sonnet-4.5',
+  'anthropic.claude-3-sonnet-20240229-v1:0': 'claude-sonnet-4',
+  'anthropic.claude-3-haiku-20240307-v1:0': 'claude-haiku-4.5',
+  
+  // GPT 系列（映射到 Claude）
+  'gpt-4': 'claude-sonnet-4.5',
+  'gpt-4o': 'claude-sonnet-4.5',
+  'gpt-4-turbo': 'claude-sonnet-4.5',
+  'gpt-3.5-turbo': 'claude-sonnet-4.5',
+  
+  // 默认
+  'default': 'claude-sonnet-4.5'
+};
+
+// 映射模型 ID
+function mapModelId(model) {
+  if (!model || typeof model !== 'string') {
+    return MODEL_ID_MAP.default;
+  }
+  
+  const modelId = model.trim().toLowerCase();
+  
+  // 精确匹配
+  if (MODEL_ID_MAP[modelId]) {
+    return MODEL_ID_MAP[modelId];
+  }
+  
+  // 模糊匹配
+  for (const [key, value] of Object.entries(MODEL_ID_MAP)) {
+    if (modelId.includes(key) || key.includes(modelId)) {
+      return value;
+    }
+  }
+  
+  // 兜底
+  return MODEL_ID_MAP.default;
+}
+
+// OpenAI 格式 → Kiro 格式
+function openaiToKiro(request, profileArn) {
+  const modelId = mapModelId(request.model);
+  
+  // 提取系统提示
+  let systemPrompt = '';
+  const nonSystemMessages = [];
+  
+  for (const msg of request.messages || []) {
+    if (msg.role === 'system') {
+      if (typeof msg.content === 'string') {
+        systemPrompt += (systemPrompt ? '\n' : '') + msg.content;
+      }
+    } else {
+      nonSystemMessages.push(msg);
+    }
+  }
+  
+  // 添加时间戳
+  const timestamp = new Date().toISOString();
+  if (systemPrompt) {
+    systemPrompt = `[Context: Current time is ${timestamp}]\n\n${systemPrompt}`;
+  }
+  
+  // 构建历史消息
+  const history = [];
+  
+  for (let i = 0; i < nonSystemMessages.length - 1; i++) {
+    const msg = nonSystemMessages[i];
+    
+    if (msg.role === 'user') {
+      history.push({
+        userInputMessage: {
+          content: typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content),
+          userInputMessageContext: {
+            appStudioState: {
+              programmingLanguage: { languageName: 'plaintext' }
+            }
+          }
+        }
+      });
+    } else if (msg.role === 'assistant') {
+      history.push({
+        assistantResponseMessage: {
+          content: msg.content || ''
+        }
+      });
+    }
+  }
+  
+  // 最后一条用户消息作为当前消息
+  const lastMessage = nonSystemMessages[nonSystemMessages.length - 1];
+  let currentUserMessage = 'Hello';
+  
+  if (lastMessage && lastMessage.role === 'user') {
+    currentUserMessage = typeof lastMessage.content === 'string' 
+      ? lastMessage.content 
+      : JSON.stringify(lastMessage.content);
+  }
+  
+  // 如果有系统提示，添加到当前消息前面
+  if (systemPrompt) {
+    currentUserMessage = `${systemPrompt}\n\n${currentUserMessage}`;
+  }
+  
+  // 构建 Kiro payload
+  const payload = {
+    conversationState: {
+      currentMessage: {
+        userInputMessage: {
+          content: currentUserMessage,
+          userInputMessageContext: {
+            appStudioState: {
+              programmingLanguage: { languageName: 'plaintext' }
+            }
+          }
+        }
+      },
+      chatTriggerType: 'MANUAL',
+      history: history
+    },
+    origin: 'AI_EDITOR',
+    modelId: modelId
+  };
+  
+  // 添加 profileArn（如果有）
+  if (profileArn) {
+    payload.profileArn = profileArn;
+  }
+  
+  return payload;
+}
+
+// 生成 UUID
+function generateUUID() {
+  return crypto.randomUUID();
+}
+
+// ============ 原有代码继续 ============
+
 // 账号类型定义 (注释形式)
 // KiroAccount {
 //   id: string;
@@ -161,7 +321,12 @@ const DOCS_HTML = INDEX_HTML;
 
 // 处理 Kiro 请求
 async function handleKiroRequest(request, env, path, url) {
-  // 获取可用的 Kiro 账号
+  // 检查是否是 OpenAI 兼容的聊天接口
+  if (path === '/kiro/v1/chat/completions') {
+    return handleKiroChatCompletion(request, env);
+  }
+  
+  // 其他 Kiro 原生接口的代理（保持原有逻辑）
   const account = await getAvailableAccount(env, 'kiro');
   
   if (!account) {
@@ -194,10 +359,8 @@ async function handleKiroRequest(request, env, path, url) {
   
   // 设置认证头
   if (account.ssoToken) {
-    // SSO Token 认证
     headers.set('Authorization', `Bearer ${account.ssoToken}`);
   } else if (account.accessToken) {
-    // Bearer Token 认证
     headers.set('Authorization', `Bearer ${account.accessToken}`);
   }
   
@@ -221,7 +384,6 @@ async function handleKiroRequest(request, env, path, url) {
     
     // 检查是否需要刷新 Token（401/403）
     if (response.status === 401 || response.status === 403) {
-      // 标记账号需要刷新
       await markAccountNeedsRefresh(env, account.id);
       
       return jsonResponse({
@@ -235,7 +397,6 @@ async function handleKiroRequest(request, env, path, url) {
     await recordRequest(env, account.id, response.ok);
     await updateAccountLastUsed(env, account.id);
     
-    // 更新使用量（如果响应包含使用信息）
     if (response.ok) {
       await updateKiroUsage(env, account.id);
     }
@@ -251,6 +412,136 @@ async function handleKiroRequest(request, env, path, url) {
     await recordRequest(env, account.id, false, error.message);
     return jsonResponse({
       error: 'Proxy error',
+      message: error.message
+    }, 500);
+  }
+}
+
+// 处理 OpenAI 格式的 Kiro 聊天请求
+async function handleKiroChatCompletion(request, env) {
+  try {
+    // 获取可用的 Kiro 账号
+    const account = await getAvailableAccount(env, 'kiro');
+    
+    if (!account) {
+      return jsonResponse({ 
+        error: 'No available Kiro accounts',
+        message: 'Please add Kiro accounts in admin panel'
+      }, 503);
+    }
+
+    // 检查 Token 是否过期
+    if (account.expiresAt && account.expiresAt < Date.now() + 300000) {
+      await refreshKiroToken(env, account.id);
+      const refreshedAccount = await getAccount(env, account.id);
+      if (refreshedAccount) {
+        Object.assign(account, refreshedAccount);
+      }
+    }
+
+    // 解析 OpenAI 格式的请求
+    const openaiRequest = await request.json();
+    
+    // 转换为 Kiro 格式
+    const kiroPayload = openaiToKiro(openaiRequest, account.profileArn);
+    
+    // 构建 Kiro API 请求
+    const region = account.region || 'us-east-1';
+    const kiroUrl = `https://codewhisperer.${region}.amazonaws.com/generateAssistantResponse`;
+    
+    const headers = {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${account.accessToken || account.ssoToken}`,
+      'x-amzn-codewhisperer-optout': 'false',
+      'x-amzn-kiro-agent-mode': 'SPECIFICATION',
+      'x-amz-user-agent': 'AWS-Toolkit-For-VSCode/3.148.0',
+      'user-agent': 'AWS-Toolkit-For-VSCode/3.148.0',
+      'amz-sdk-invocation-id': generateUUID(),
+      'amz-sdk-request': 'attempt=1; max=3'
+    };
+    
+    // 发送请求到 Kiro
+    const kiroResponse = await fetch(kiroUrl, {
+      method: 'POST',
+      headers: headers,
+      body: JSON.stringify(kiroPayload)
+    });
+    
+    // 检查认证错误
+    if (kiroResponse.status === 401 || kiroResponse.status === 403) {
+      await markAccountNeedsRefresh(env, account.id);
+      return jsonResponse({
+        error: 'Authentication failed',
+        message: 'Token expired or invalid'
+      }, 401);
+    }
+    
+    if (!kiroResponse.ok) {
+      const errorText = await kiroResponse.text();
+      return jsonResponse({
+        error: 'Kiro API error',
+        message: errorText,
+        status: kiroResponse.status
+      }, kiroResponse.status);
+    }
+    
+    // 解析 Kiro 响应（事件流）
+    const kiroText = await kiroResponse.text();
+    
+    // 简单提取内容（完整的流式解析留待后续优化）
+    let content = '';
+    const lines = kiroText.split('\n');
+    
+    for (const line of lines) {
+      if (line.startsWith('data:')) {
+        const data = line.slice(5).trim();
+        if (data && data !== '[DONE]') {
+          try {
+            const event = JSON.parse(data);
+            if (event.assistantResponseEvent && event.assistantResponseEvent.content) {
+              content += event.assistantResponseEvent.content;
+            }
+            if (event.codeEvent && event.codeEvent.content) {
+              content += event.codeEvent.content;
+            }
+          } catch (e) {
+            // 忽略解析错误
+          }
+        }
+      }
+    }
+    
+    // 记录使用统计
+    await recordRequest(env, account.id, true);
+    await updateAccountLastUsed(env, account.id);
+    await updateKiroUsage(env, account.id);
+    
+    // 转换为 OpenAI 格式响应
+    const openaiResponse = {
+      id: `chatcmpl-${generateUUID()}`,
+      object: 'chat.completion',
+      created: Math.floor(Date.now() / 1000),
+      model: openaiRequest.model || 'claude-sonnet-4.5',
+      choices: [{
+        index: 0,
+        message: {
+          role: 'assistant',
+          content: content
+        },
+        finish_reason: 'stop'
+      }],
+      usage: {
+        prompt_tokens: 0,
+        completion_tokens: 0,
+        total_tokens: 0
+      }
+    };
+    
+    return jsonResponse(openaiResponse);
+    
+  } catch (error) {
+    return jsonResponse({
+      error: 'Internal error',
       message: error.message
     }, 500);
   }
