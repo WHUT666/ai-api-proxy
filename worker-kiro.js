@@ -1,36 +1,36 @@
 // Cloudflare Workers AI API 代理 - Kiro 增强版
 // 支持 OpenAI, Anthropic, Google Gemini, Amazon Q (Kiro)
 
-// 账号类型定义
-interface KiroAccount {
-  id: string;
-  email: string;
-  provider: 'kiro';
-  
-  // Kiro 特有字段
-  ssoToken?: string;           // SSO Token（AWS IAM Identity Center）
-  accessToken?: string;         // Bearer Token
-  refreshToken?: string;        // 用于刷新
-  
-  // OIDC 认证（Builder ID / GitHub / Google）
-  clientId?: string;
-  clientSecret?: string;
-  idToken?: string;
-  
-  // 账号信息
-  region?: string;              // AWS 区域，默认 us-east-1
-  expiresAt?: number;
-  enabled: boolean;
-  lastUsed?: number;
-  createdAt: number;
-  
-  // 使用统计
-  usage?: {
-    currentMonth: number;       // 当前月使用量
-    limit: number;              // 配额限制
-    resetAt: number;            // 重置时间
-  };
-}
+// 账号类型定义 (注释形式)
+// KiroAccount {
+//   id: string;
+//   email: string;
+//   provider: 'kiro';
+//   
+//   // Kiro 特有字段
+//   ssoToken?: string;           // SSO Token（AWS IAM Identity Center）
+//   accessToken?: string;         // Bearer Token
+//   refreshToken?: string;        // 用于刷新
+//   
+//   // OIDC 认证（Builder ID / GitHub / Google）
+//   clientId?: string;
+//   clientSecret?: string;
+//   idToken?: string;
+//   
+//   // 账号信息
+//   region?: string;              // AWS 区域，默认 us-east-1
+//   expiresAt?: number;
+//   enabled: boolean;
+//   lastUsed?: number;
+//   createdAt: number;
+//   
+//   // 使用统计
+//   usage?: {
+//     currentMonth: number;       // 当前月使用量
+//     limit: number;              // 配额限制
+//     resetAt: number;            // 重置时间
+//   };
+// }
 
 // Kiro API 端点
 const KIRO_ENDPOINTS = {

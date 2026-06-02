@@ -1,9 +1,22 @@
 name = "ai-api-proxy"
-main = "worker.js"
+main = "worker-kiro.js"
 compatibility_date = "2024-01-01"
 
 # Cloudflare Workers 配置
 # 文档: https://developers.cloudflare.com/workers/
+
+# KV 命名空间绑定
+[[kv_namespaces]]
+binding = "ACCOUNTS"
+id = "13176d9f897a43afa96f825f58b175f7"
+
+[[kv_namespaces]]
+binding = "STATS"
+id = "f4982dcf15f94f8fa035eef1b8bb94f7"
+
+# 环境变量
+[vars]
+ADMIN_KEY = "kiro-admin-2024"
 
 [env.production]
 name = "ai-api-proxy"
