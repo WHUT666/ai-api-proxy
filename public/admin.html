@@ -658,7 +658,8 @@ const response = await fetch(
         // 加载 Kiro 账号列表
         async function loadKiroAccounts() {
             try {
-                const accounts = await apiRequest('/admin/accounts');
+                const response = await apiRequest('/admin/accounts');
+                const accounts = response.accounts || [];
                 const kiroAccounts = accounts.filter(acc => acc.provider === 'kiro');
                 displayKiroAccounts(kiroAccounts);
             } catch (error) {
