@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>管理界面诊断工具</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 10px;
+            padding: 30px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        
+        h1 {
+            color: #667eea;
+            margin-bottom: 20px;
+        }
+        
+        .section {
+            margin-bottom: 30px;
+            padding: 20px;
+            background: #f7f7f7;
+            border-radius: 5px;
+        }
+        
+        .section h2 {
+            color: #333;
+            margin-bottom: 15px;
+            font-size: 18px;
+        }
+        
+        .result {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 5px;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+        }
+        
+        .success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        
+        .error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        
+        .warning {
+            background: #fff3cd;
+            color: #856404;
+            border: 1px solid #ffeeba;
+        }
+        
+        .btn {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+            margin: 5px;
+        }
+        
+        .btn:hover {
+            background: #5568d3;
+        }
+        
+        .btn-danger {
+            background: #dc3545;
+        }
+        
+        .btn-danger:hover {
+            background: #c82333;
+        }
+        
+        input {
+            width: 100%;
+            padding: 10px;
+            margin: 10px 0;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            font-size: 14px;
+        }
+        
+        pre {
+            background: #f8f9fa;
+            padding: 10px;
+            border-radius: 5px;
+            overflow-x: auto;
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔍 管理界面诊断工具</h1>
+        
+        <div class="section">
+            <h2>1️⃣ 检查 LocalStorage 配置</h2>
+            <div id="storageCheck"></div>
+        </div>
+        
+        <div class="section">
+            <h2>2️⃣ 测试 API 连接</h2>
+            <div id="apiCheck"></div>
+            <button class="btn" onclick="testAPI()">重新测试 API</button>
+        </div>
+        
+        <div class="section">
+            <h2>3️⃣ 重新配置设置</h2>
+            <label>管理员密钥：</label>
+            <input type="text" id="adminKey" value="kiro-admin-2024">
+            
+            <label>Worker 地址：</label>
+            <input type="text" id="workerUrl" value="https://ai-api-proxy.2358314123.workers.dev">
+            
+            <button class="btn" onclick="saveConfig()">保存配置</button>
+            <button class="btn btn-danger" onclick="clearConfig()">清除所有配置</button>
+        </div>
+        
+        <div class="section">
+            <h2>4️⃣ 原始响应数据</h2>
+            <div id="rawResponse"></div>
+        </div>
+        
+        <div class="section">
+            <h2>5️⃣ 快速操作</h2>
+            <button class="btn" onclick="goToAdmin()">打开管理界面</button>
+            <button class="btn" onclick="location.reload()">刷新此页面</button>
+        </div>
+    </div>
+
+    <script>
+        // 页面加载时自动检查
+        window.onload = function() {
+            checkStorage();
+            testAPI();
+        };
+        
+        // 检查 localStorage
+        function checkStorage() {
+            const adminKey = localStorage.getItem('adminKey');
+            const workerUrl = localStorage.getItem('workerUrl');
+            
+            let html = '';
+            
+            if (!adminKey || !workerUrl) {
+                html = '<div class="result error">❌ 配置缺失！</div>';
+                if (!adminKey) html += '<div class="result warning">⚠️ 未找到管理员密钥</div>';
+                if (!workerUrl) html += '<div class="result warning">⚠️ 未找到 Worker 地址</div>';
+            } else {
+                html = '<div class="result success">✅ 配置已保存</div>';
+                html += '<div class="result">管理员密钥: ' + adminKey + '</div>';
+                html += '<div class="result">Worker 地址: ' + workerUrl + '</div>';
+            }
+            
+            document.getElementById('storageCheck').innerHTML = html;
+        }
+        
+        // 测试 API
+        async function testAPI() {
+            const adminKey = localStorage.getItem('adminKey') || 'kiro-admin-2024';
+            const workerUrl = localStorage.getItem('workerUrl') || 'https://ai-api-proxy.2358314123.workers.dev';
+            
+            document.getElementById('apiCheck').innerHTML = '<div class="result">🔄 正在测试...</div>';
+            
+            try {
+                const response = await fetch(workerUrl + '/admin/accounts', {
+                    method: 'GET',
+                    headers: {
+                        'Authorization': 'Bearer ' + adminKey,
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                const data = await response.json();
+                
+                let html = '';
+                
+                if (response.ok && data.success) {
+                    html = '<div class="result success">✅ API 连接成功！</div>';
+                    html += '<div class="result">状态码: ' + response.status + '</div>';
+                    html += '<div class="result">账号数量: ' + (data.accounts ? data.accounts.length : 0) + '</div>';
+                    
+                    if (data.accounts && data.accounts.length > 0) {
+                        html += '<div class="result success">✅ 找到 ' + data.accounts.length + ' 个账号</div>';
+                        html += '<div class="result">前3个账号:</div>';
+                        html += '<pre>' + JSON.stringify(data.accounts.slice(0, 3), null, 2) + '</pre>';
+                    } else {
+                        html += '<div class="result warning">⚠️ 账号列表为空</div>';
+                    }
+                    
+                    document.getElementById('rawResponse').innerHTML = '<pre>' + JSON.stringify(data, null, 2) + '</pre>';
+                } else {
+                    html = '<div class="result error">❌ API 返回错误</div>';
+                    html += '<div class="result">状态码: ' + response.status + '</div>';
+                    html += '<div class="result">错误: ' + (data.error || '未知错误') + '</div>';
+                    
+                    document.getElementById('rawResponse').innerHTML = '<pre>' + JSON.stringify(data, null, 2) + '</pre>';
+                }
+                
+                document.getElementById('apiCheck').innerHTML = html;
+                
+            } catch (error) {
+                let html = '<div class="result error">❌ API 连接失败</div>';
+                html += '<div class="result error">错误: ' + error.message + '</div>';
+                html += '<div class="result warning">可能的原因:</div>';
+                html += '<div class="result">1. Worker 地址错误</div>';
+                html += '<div class="result">2. 网络连接问题</div>';
+                html += '<div class="result">3. CORS 配置问题</div>';
+                
+                document.getElementById('apiCheck').innerHTML = html;
+                document.getElementById('rawResponse').innerHTML = '<pre>Error: ' + error.message + '</pre>';
+            }
+        }
+        
+        // 保存配置
+        function saveConfig() {
+            const adminKey = document.getElementById('adminKey').value.trim();
+            const workerUrl = document.getElementById('workerUrl').value.trim();
+            
+            if (!adminKey || !workerUrl) {
+                alert('❌ 请填写完整的配置信息');
+                return;
+            }
+            
+            localStorage.setItem('adminKey', adminKey);
+            localStorage.setItem('workerUrl', workerUrl);
+            
+            alert('✅ 配置已保存！');
+            checkStorage();
+            testAPI();
+        }
+        
+        // 清除配置
+        function clearConfig() {
+            if (confirm('确定要清除所有配置吗？')) {
+                localStorage.clear();
+                alert('✅ 已清除所有配置');
+                checkStorage();
+                document.getElementById('apiCheck').innerHTML = '';
+                document.getElementById('rawResponse').innerHTML = '';
+            }
+        }
+        
+        // 打开管理界面
+        function goToAdmin() {
+            window.open('admin.html', '_blank');
+        }
+    </script>
+</body>
+</html>
