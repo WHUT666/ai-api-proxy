@@ -710,7 +710,7 @@ const response = await fetch(
         // 刷新 Token
         async function refreshKiroToken(id) {
             try {
-                await apiRequest(`/admin/refresh/${id}`, { method: 'POST' });
+                const response = await apiRequest(`/admin/accounts/${id}/refresh`, { method: 'POST' });
                 showAlert('Token 刷新成功', 'success');
                 loadKiroAccounts();
             } catch (error) {
