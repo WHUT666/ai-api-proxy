@@ -3,6 +3,39 @@
 
 // ============ Kiro 格式转换模块 ============
 
+// ProfileArn 配置
+const KIRO_BUILDER_ID_PROFILE_ARN = 'arn:aws:codewhisperer:us-east-1:638616132270:profile/AAAACCCCXXXX';
+const KIRO_SOCIAL_PROFILE_ARN = 'arn:aws:codewhisperer:us-east-1:699475941385:profile/EHGA3GRVQMUK';
+
+// 根据账号类型解析 profileArn
+function resolveProfileArn(account) {
+  // 如果账号有自己的 profileArn，使用它
+  if (account.profileArn) {
+    return account.profileArn;
+  }
+  
+  // 根据认证方式判断
+  const authMethod = account.authMethod || 'oidc';
+  
+  // 社交登录（GitHub/Google）
+  if (authMethod === 'social') {
+    return KIRO_SOCIAL_PROFILE_ARN;
+  }
+  
+  // Builder ID 或 IdC
+  return KIRO_BUILDER_ID_PROFILE_ARN;
+}
+
+// 生成 Kiro User-Agent
+function getKiroUserAgent() {
+  return 'aws-sdk-js/3.698.0 ua/2.1 os/linux lang/js md/nodejs#20.0.0 api/codewhispererstreaming#2024-11-20 m/E KiroIDE-1.0.0';
+}
+
+// 生成 Kiro AMZ User-Agent
+function getKiroAmzUserAgent() {
+  return 'aws-sdk-js/3.698.0 KiroIDE-1.0.0';
+}
+
 // 模型 ID 映射
 const MODEL_ID_MAP = {
   // Claude 4.5 系列
@@ -429,6 +462,18 @@ async function handleKiroChatCompletion(request, env) {
         message: 'Please add Kiro accounts in admin panel'
       }, 503);
     }
+    
+    // 调试：检查账号是否有 accessToken
+    if (!account.accessToken && !account.ssoToken) {
+      return jsonResponse({
+        error: 'Account missing token',
+        message: 'Account has no accessToken or ssoToken',
+        accountId: account.id,
+        accountEmail: account.email,
+        hasClientId: !!account.clientId,
+        hasRefreshToken: !!account.refreshToken
+      }, 500);
+    }
 
     // 检查 Token 是否过期
     if (account.expiresAt && account.expiresAt < Date.now() + 300000) {
@@ -442,8 +487,11 @@ async function handleKiroChatCompletion(request, env) {
     // 解析 OpenAI 格式的请求
     const openaiRequest = await request.json();
     
+    // 解析 profileArn
+    const profileArn = resolveProfileArn(account);
+    
     // 转换为 Kiro 格式
-    const kiroPayload = openaiToKiro(openaiRequest, account.profileArn);
+    const kiroPayload = openaiToKiro(openaiRequest, profileArn);
     
     // 构建 Kiro API 请求
     const region = account.region || 'us-east-1';
@@ -452,10 +500,9 @@ async function handleKiroChatCompletion(request, env) {
     const headers = {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${account.accessToken || account.ssoToken}`,
-      'x-amzn-codewhisperer-optout': 'false',
-      'x-amzn-kiro-agent-mode': 'SPECIFICATION',
-      'x-amz-user-agent': 'AWS-Toolkit-For-VSCode/3.148.0',
-      'user-agent': 'AWS-Toolkit-For-VSCode/3.148.0',
+      'x-amzn-kiro-agent-mode': 'spec',
+      'x-amz-user-agent': getKiroAmzUserAgent(),
+      'user-agent': getKiroUserAgent(),
       'amz-sdk-invocation-id': generateUUID(),
       'amz-sdk-request': 'attempt=1; max=3'
     };
@@ -470,9 +517,15 @@ async function handleKiroChatCompletion(request, env) {
     // 检查认证错误
     if (kiroResponse.status === 401 || kiroResponse.status === 403) {
       await markAccountNeedsRefresh(env, account.id);
+      
+      // 返回更详细的错误信息
+      const errorText = await kiroResponse.text();
       return jsonResponse({
         error: 'Authentication failed',
-        message: 'Token expired or invalid'
+        message: 'Token expired or invalid',
+        kiroError: errorText,
+        accountId: account.id,
+        tokenLength: account.accessToken ? account.accessToken.length : 0
       }, 401);
     }
     
@@ -840,6 +893,12 @@ async function handleAdminRequest(request, env, path) {
             enabled: accountData.enabled !== false,
             createdAt: Date.now(),
             region: accountData.region || 'us-east-1',
+            
+            // 认证方式
+            authMethod: accountData.authMethod || (accountData.clientId ? 'oidc' : 'social'),
+            
+            // ProfileArn（从 OIDC JSON 提取或使用默认值）
+            profileArn: accountData.profileArn || accountData.ssoProfileArn,
             
             // 根据认证类型设置字段
             ...(accountData.ssoToken && { ssoToken: accountData.ssoToken }),
