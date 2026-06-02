@@ -1,0 +1,525 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>使用文档 - AI API 代理服务</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Microsoft YaHei', sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            color: #333;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        /* 导航栏 */
+        .navbar {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border-radius: 12px;
+            padding: 20px 30px;
+            margin-bottom: 30px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .logo {
+            font-size: 24px;
+            font-weight: bold;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .nav-links {
+            display: flex;
+            gap: 20px;
+        }
+
+        .nav-links a {
+            color: #666;
+            text-decoration: none;
+            padding: 8px 16px;
+            border-radius: 6px;
+            transition: all 0.3s;
+        }
+
+        .nav-links a:hover {
+            background: #f0f0f0;
+            color: #667eea;
+        }
+
+        /* 主要内容 */
+        .content {
+            display: grid;
+            grid-template-columns: 250px 1fr;
+            gap: 30px;
+        }
+
+        /* 侧边栏 */
+        .sidebar {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border-radius: 12px;
+            padding: 24px;
+            height: fit-content;
+            position: sticky;
+            top: 20px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+
+        .sidebar h3 {
+            font-size: 18px;
+            margin-bottom: 16px;
+            color: #333;
+        }
+
+        .sidebar ul {
+            list-style: none;
+        }
+
+        .sidebar li {
+            margin-bottom: 8px;
+        }
+
+        .sidebar a {
+            color: #666;
+            text-decoration: none;
+            display: block;
+            padding: 8px 12px;
+            border-radius: 6px;
+            transition: all 0.3s;
+        }
+
+        .sidebar a:hover {
+            background: #f0f0f0;
+            color: #667eea;
+        }
+
+        /* 文档内容 */
+        .doc-content {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border-radius: 12px;
+            padding: 40px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+
+        .doc-content h1 {
+            font-size: 36px;
+            margin-bottom: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .doc-content h2 {
+            font-size: 28px;
+            margin-top: 40px;
+            margin-bottom: 16px;
+            color: #333;
+            border-bottom: 2px solid #e5e7eb;
+            padding-bottom: 8px;
+        }
+
+        .doc-content h3 {
+            font-size: 22px;
+            margin-top: 30px;
+            margin-bottom: 12px;
+            color: #555;
+        }
+
+        .doc-content p {
+            line-height: 1.8;
+            margin-bottom: 16px;
+            color: #666;
+        }
+
+        .doc-content ul, .doc-content ol {
+            margin-left: 24px;
+            margin-bottom: 16px;
+        }
+
+        .doc-content li {
+            line-height: 1.8;
+            margin-bottom: 8px;
+            color: #666;
+        }
+
+        .doc-content code {
+            background: #f3f4f6;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 14px;
+            color: #d63384;
+        }
+
+        .doc-content pre {
+            background: #1e293b;
+            color: #e2e8f0;
+            padding: 20px;
+            border-radius: 8px;
+            overflow-x: auto;
+            margin: 20px 0;
+        }
+
+        .doc-content pre code {
+            background: none;
+            color: #e2e8f0;
+            padding: 0;
+        }
+
+        .note {
+            background: #eff6ff;
+            border-left: 4px solid #3b82f6;
+            padding: 16px;
+            margin: 20px 0;
+            border-radius: 4px;
+        }
+
+        .note-title {
+            font-weight: bold;
+            color: #3b82f6;
+            margin-bottom: 8px;
+        }
+
+        .warning {
+            background: #fef3c7;
+            border-left: 4px solid #f59e0b;
+            padding: 16px;
+            margin: 20px 0;
+            border-radius: 4px;
+        }
+
+        .warning-title {
+            font-weight: bold;
+            color: #f59e0b;
+            margin-bottom: 8px;
+        }
+
+        /* 响应式 */
+        @media (max-width: 768px) {
+            .content {
+                grid-template-columns: 1fr;
+            }
+
+            .sidebar {
+                position: static;
+            }
+
+            .navbar {
+                flex-direction: column;
+                gap: 20px;
+            }
+
+            .doc-content {
+                padding: 24px;
+            }
+
+            .doc-content h1 {
+                font-size: 28px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- 导航栏 -->
+        <nav class="navbar">
+            <div class="logo">🚀 AI API 代理</div>
+            <div class="nav-links">
+                <a href="/index.html">首页</a>
+                <a href="/docs.html">文档</a>
+                <a href="/admin-kiro.html">管理后台</a>
+                <a href="https://github.com/WHUT666/ai-api-proxy" target="_blank">GitHub</a>
+            </div>
+        </nav>
+
+        <!-- 主要内容 -->
+        <div class="content">
+            <!-- 侧边栏 -->
+            <aside class="sidebar">
+                <h3>📚 目录</h3>
+                <ul>
+                    <li><a href="#quick-start">快速开始</a></li>
+                    <li><a href="#openai">OpenAI API</a></li>
+                    <li><a href="#anthropic">Anthropic API</a></li>
+                    <li><a href="#gemini">Gemini API</a></li>
+                    <li><a href="#kiro">Kiro API</a></li>
+                    <li><a href="#examples">代码示例</a></li>
+                    <li><a href="#faq">常见问题</a></li>
+                </ul>
+            </aside>
+
+            <!-- 文档内容 -->
+            <main class="doc-content">
+                <h1>使用文档</h1>
+                <p>欢迎使用 AI API 代理服务！本文档将帮助你快速集成和使用我们的服务。</p>
+
+                <h2 id="quick-start">🚀 快速开始</h2>
+                <p>我们的 API 代理服务完全兼容原始 API，只需修改 baseURL 即可使用。</p>
+
+                <div class="note">
+                    <div class="note-title">💡 提示</div>
+                    <p>服务地址：<code>https://ai-api-proxy.2358314123.workers.dev</code></p>
+                </div>
+
+                <h3>1. 测试服务状态</h3>
+                <pre><code>curl https://ai-api-proxy.2358314123.workers.dev/health</code></pre>
+
+                <p>返回示例：</p>
+                <pre><code>{
+  "status": "ok",
+  "timestamp": "2026-06-02T10:00:00.000Z",
+  "version": "2.0.0-kiro",
+  "supported": ["openai", "anthropic", "gemini", "kiro"]
+}</code></pre>
+
+                <h2 id="openai">🤖 OpenAI API</h2>
+                <p>完全兼容 OpenAI 官方 API，支持所有 GPT 模型。</p>
+
+                <h3>端点地址</h3>
+                <p><code>https://ai-api-proxy.2358314123.workers.dev/v1/*</code></p>
+
+                <h3>使用示例</h3>
+                <pre><code>curl https://ai-api-proxy.2358314123.workers.dev/v1/chat/completions \
+  -H "Authorization: Bearer YOUR_OPENAI_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "gpt-3.5-turbo",
+    "messages": [
+      {"role": "user", "content": "Hello!"}
+    ]
+  }'</code></pre>
+
+                <h3>JavaScript 示例</h3>
+                <pre><code>import OpenAI from 'openai';
+
+const openai = new OpenAI({
+  apiKey: 'YOUR_OPENAI_API_KEY',
+  baseURL: 'https://ai-api-proxy.2358314123.workers.dev/v1'
+});
+
+const response = await openai.chat.completions.create({
+  model: 'gpt-3.5-turbo',
+  messages: [{ role: 'user', content: 'Hello!' }]
+});
+
+console.log(response.choices[0].message.content);</code></pre>
+
+                <h2 id="anthropic">🧠 Anthropic (Claude) API</h2>
+                <p>支持 Claude 全系列模型，包括 Claude 3。</p>
+
+                <h3>端点地址</h3>
+                <p><code>https://ai-api-proxy.2358314123.workers.dev/anthropic/*</code></p>
+
+                <h3>使用示例</h3>
+                <pre><code>curl https://ai-api-proxy.2358314123.workers.dev/anthropic/v1/messages \
+  -H "x-api-key: YOUR_ANTHROPIC_API_KEY" \
+  -H "anthropic-version: 2023-06-01" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "claude-3-haiku-20240307",
+    "max_tokens": 1024,
+    "messages": [
+      {"role": "user", "content": "Hello!"}
+    ]
+  }'</code></pre>
+
+                <h3>Python 示例</h3>
+                <pre><code>from anthropic import Anthropic
+
+client = Anthropic(
+    api_key="YOUR_ANTHROPIC_API_KEY",
+    base_url="https://ai-api-proxy.2358314123.workers.dev/anthropic"
+)
+
+message = client.messages.create(
+    model="claude-3-haiku-20240307",
+    max_tokens=1024,
+    messages=[
+        {"role": "user", "content": "Hello!"}
+    ]
+)
+
+print(message.content)</code></pre>
+
+                <h2 id="gemini">💎 Google Gemini API</h2>
+                <p>支持 Gemini Pro 和 Gemini Pro Vision 模型。</p>
+
+                <h3>端点地址</h3>
+                <p><code>https://ai-api-proxy.2358314123.workers.dev/gemini/*</code></p>
+
+                <h3>使用示例</h3>
+                <pre><code>curl "https://ai-api-proxy.2358314123.workers.dev/gemini/v1beta/models/gemini-pro:generateContent?key=YOUR_GEMINI_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "contents": [{
+      "parts": [{"text": "Hello!"}]
+    }]
+  }'</code></pre>
+
+                <h2 id="kiro">⚡ Kiro (Amazon Q) API</h2>
+                <p>支持 Amazon Q 代码助手功能。</p>
+
+                <div class="warning">
+                    <div class="warning-title">⚠️ 注意</div>
+                    <p>Kiro API 需要先在管理后台配置账号才能使用。</p>
+                </div>
+
+                <h3>端点地址</h3>
+                <p><code>https://ai-api-proxy.2358314123.workers.dev/kiro/api/v1/*</code></p>
+
+                <h3>使用示例</h3>
+                <pre><code>curl https://ai-api-proxy.2358314123.workers.dev/kiro/api/v1/streaming-conversations \
+  -H "Content-Type: application/json" \
+  -d '{
+    "conversationState": {
+      "currentMessage": {
+        "userInputMessage": {
+          "content": "Write a hello world in Python"
+        }
+      },
+      "chatTriggerType": "MANUAL"
+    }
+  }'</code></pre>
+
+                <h2 id="examples">📝 代码示例</h2>
+
+                <h3>Node.js 完整示例</h3>
+                <pre><code>// 安装依赖：npm install openai anthropic
+
+import OpenAI from 'openai';
+import Anthropic from '@anthropic-ai/sdk';
+
+// OpenAI
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+  baseURL: 'https://ai-api-proxy.2358314123.workers.dev/v1'
+});
+
+// Anthropic
+const anthropic = new Anthropic({
+  apiKey: process.env.ANTHROPIC_API_KEY,
+  baseURL: 'https://ai-api-proxy.2358314123.workers.dev/anthropic'
+});
+
+// 使用 OpenAI
+async function testOpenAI() {
+  const completion = await openai.chat.completions.create({
+    model: 'gpt-3.5-turbo',
+    messages: [{ role: 'user', content: 'Say hello!' }]
+  });
+  console.log(completion.choices[0].message.content);
+}
+
+// 使用 Anthropic
+async function testAnthropic() {
+  const message = await anthropic.messages.create({
+    model: 'claude-3-haiku-20240307',
+    max_tokens: 1024,
+    messages: [{ role: 'user', content: 'Say hello!' }]
+  });
+  console.log(message.content[0].text);
+}
+
+testOpenAI();
+testAnthropic();</code></pre>
+
+                <h3>Python 完整示例</h3>
+                <pre><code># 安装依赖：pip install openai anthropic
+
+from openai import OpenAI
+from anthropic import Anthropic
+import os
+
+# OpenAI
+openai_client = OpenAI(
+    api_key=os.environ.get("OPENAI_API_KEY"),
+    base_url="https://ai-api-proxy.2358314123.workers.dev/v1"
+)
+
+# Anthropic
+anthropic_client = Anthropic(
+    api_key=os.environ.get("ANTHROPIC_API_KEY"),
+    base_url="https://ai-api-proxy.2358314123.workers.dev/anthropic"
+)
+
+# 使用 OpenAI
+def test_openai():
+    response = openai_client.chat.completions.create(
+        model="gpt-3.5-turbo",
+        messages=[{"role": "user", "content": "Say hello!"}]
+    )
+    print(response.choices[0].message.content)
+
+# 使用 Anthropic
+def test_anthropic():
+    message = anthropic_client.messages.create(
+        model="claude-3-haiku-20240307",
+        max_tokens=1024,
+        messages=[{"role": "user", "content": "Say hello!"}]
+    )
+    print(message.content[0].text)
+
+test_openai()
+test_anthropic()</code></pre>
+
+                <h2 id="faq">❓ 常见问题</h2>
+
+                <h3>1. 服务是否免费？</h3>
+                <p>是的，本服务完全免费。基于 Cloudflare Workers 免费计划，每天提供 10 万次免费请求。</p>
+
+                <h3>2. 需要自己的 API Key 吗？</h3>
+                <p>是的，你需要使用自己的 OpenAI、Anthropic 或 Gemini API Key。我们只是提供代理转发服务。</p>
+
+                <h3>3. 支持流式响应吗？</h3>
+                <p>是的，完全支持流式响应（SSE），与官方 API 行为一致。</p>
+
+                <h3>4. 有速率限制吗？</h3>
+                <p>Cloudflare Workers 免费计划限制为每天 10 万次请求。单个 IP 没有额外限制。</p>
+
+                <h3>5. 如何添加 Kiro 账号？</h3>
+                <p>请访问<a href="/admin-kiro.html">管理后台</a>，在"添加 Kiro 账号"页面配置。详细步骤参考 GitHub 仓库的文档。</p>
+
+                <h3>6. 数据安全吗？</h3>
+                <p>我们不存储任何请求内容，所有数据都是透明转发到上游 API。你的 API Key 通过 HTTPS 加密传输。</p>
+
+                <h3>7. 支持哪些模型？</h3>
+                <ul>
+                    <li><strong>OpenAI:</strong> GPT-4, GPT-3.5-turbo, GPT-4-turbo 等所有模型</li>
+                    <li><strong>Anthropic:</strong> Claude 3 系列（Opus, Sonnet, Haiku）</li>
+                    <li><strong>Gemini:</strong> Gemini Pro, Gemini Pro Vision</li>
+                    <li><strong>Kiro:</strong> Amazon Q Developer</li>
+                </ul>
+
+                <h3>8. 遇到问题怎么办？</h3>
+                <p>请访问 <a href="https://github.com/WHUT666/ai-api-proxy/issues" target="_blank">GitHub Issues</a> 提交问题，或查看项目文档。</p>
+
+                <div class="note">
+                    <div class="note-title">💡 更多帮助</div>
+                    <p>
+                        访问 <a href="https://github.com/WHUT666/ai-api-proxy" target="_blank">GitHub 仓库</a> 获取更多文档和示例。<br>
+                        查看 <a href="/admin-kiro.html">管理后台</a> 配置和监控服务。
+                    </p>
+                </div>
+            </main>
+        </div>
+    </div>
+</body>
+</html>

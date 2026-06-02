@@ -1,0 +1,452 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI API 代理服务 - 首页</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Microsoft YaHei', sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            color: #333;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        /* 导航栏 */
+        .navbar {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border-radius: 12px;
+            padding: 20px 30px;
+            margin-bottom: 30px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .logo {
+            font-size: 24px;
+            font-weight: bold;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .nav-links {
+            display: flex;
+            gap: 20px;
+        }
+
+        .nav-links a {
+            color: #666;
+            text-decoration: none;
+            padding: 8px 16px;
+            border-radius: 6px;
+            transition: all 0.3s;
+        }
+
+        .nav-links a:hover {
+            background: #f0f0f0;
+            color: #667eea;
+        }
+
+        /* 主要内容 */
+        .hero {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border-radius: 16px;
+            padding: 60px 40px;
+            text-align: center;
+            margin-bottom: 30px;
+            box-shadow: 0 8px 16px rgba(0, 0, 0, 0.1);
+        }
+
+        .hero h1 {
+            font-size: 48px;
+            margin-bottom: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .hero p {
+            font-size: 18px;
+            color: #666;
+            margin-bottom: 40px;
+            line-height: 1.6;
+        }
+
+        .cta-buttons {
+            display: flex;
+            gap: 20px;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+
+        .btn {
+            padding: 14px 32px;
+            border-radius: 8px;
+            border: none;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+            text-decoration: none;
+            display: inline-block;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 16px rgba(102, 126, 234, 0.3);
+        }
+
+        .btn-secondary {
+            background: white;
+            color: #667eea;
+            border: 2px solid #667eea;
+        }
+
+        .btn-secondary:hover {
+            background: #667eea;
+            color: white;
+        }
+
+        /* 功能卡片 */
+        .features {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 24px;
+            margin-bottom: 30px;
+        }
+
+        .feature-card {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border-radius: 12px;
+            padding: 30px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            transition: all 0.3s;
+        }
+
+        .feature-card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 8px 16px rgba(0, 0, 0, 0.15);
+        }
+
+        .feature-icon {
+            width: 60px;
+            height: 60px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 30px;
+            margin-bottom: 20px;
+        }
+
+        .feature-card h3 {
+            font-size: 20px;
+            margin-bottom: 12px;
+            color: #333;
+        }
+
+        .feature-card p {
+            color: #666;
+            line-height: 1.6;
+        }
+
+        /* 服务状态 */
+        .status-card {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border-radius: 12px;
+            padding: 30px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            margin-bottom: 30px;
+        }
+
+        .status-card h2 {
+            font-size: 24px;
+            margin-bottom: 20px;
+            color: #333;
+        }
+
+        .status-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 16px;
+        }
+
+        .status-item {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 8px;
+            text-align: center;
+        }
+
+        .status-indicator {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            display: inline-block;
+            margin-right: 8px;
+        }
+
+        .status-online {
+            background: #10b981;
+        }
+
+        .status-offline {
+            background: #ef4444;
+        }
+
+        .status-item h4 {
+            font-size: 16px;
+            margin-bottom: 8px;
+            color: #666;
+        }
+
+        .status-item p {
+            font-size: 14px;
+            color: #999;
+        }
+
+        /* 底部 */
+        .footer {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border-radius: 12px;
+            padding: 30px;
+            text-align: center;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            color: #666;
+        }
+
+        .footer a {
+            color: #667eea;
+            text-decoration: none;
+        }
+
+        .footer a:hover {
+            text-decoration: underline;
+        }
+
+        /* 响应式 */
+        @media (max-width: 768px) {
+            .hero h1 {
+                font-size: 32px;
+            }
+
+            .navbar {
+                flex-direction: column;
+                gap: 20px;
+            }
+
+            .cta-buttons {
+                flex-direction: column;
+            }
+
+            .btn {
+                width: 100%;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- 导航栏 -->
+        <nav class="navbar">
+            <div class="logo">🚀 AI API 代理</div>
+            <div class="nav-links">
+                <a href="/">首页</a>
+                <a href="/docs.html">文档</a>
+                <a href="/admin-kiro.html">管理后台</a>
+                <a href="https://github.com/WHUT666/ai-api-proxy" target="_blank">GitHub</a>
+            </div>
+        </nav>
+
+        <!-- 主要内容 -->
+        <section class="hero">
+            <h1>统一的 AI API 网关</h1>
+            <p>
+                一站式 AI API 代理服务，支持 OpenAI、Anthropic、Google Gemini 和 Kiro (Amazon Q)<br>
+                全球 CDN 加速 · 智能负载均衡 · 完全免费
+            </p>
+            <div class="cta-buttons">
+                <a href="/docs.html" class="btn btn-primary">📖 查看文档</a>
+                <a href="/admin-kiro.html" class="btn btn-secondary">⚙️ 管理后台</a>
+            </div>
+        </section>
+
+        <!-- 服务状态 -->
+        <div class="status-card">
+            <h2>📊 服务状态</h2>
+            <div class="status-grid">
+                <div class="status-item">
+                    <h4>
+                        <span class="status-indicator status-online"></span>
+                        总体状态
+                    </h4>
+                    <p id="overall-status">检查中...</p>
+                </div>
+                <div class="status-item">
+                    <h4>
+                        <span class="status-indicator status-online"></span>
+                        OpenAI
+                    </h4>
+                    <p>可用</p>
+                </div>
+                <div class="status-item">
+                    <h4>
+                        <span class="status-indicator status-online"></span>
+                        Anthropic
+                    </h4>
+                    <p>可用</p>
+                </div>
+                <div class="status-item">
+                    <h4>
+                        <span class="status-indicator status-online"></span>
+                        Gemini
+                    </h4>
+                    <p>可用</p>
+                </div>
+                <div class="status-item">
+                    <h4>
+                        <span class="status-indicator" id="kiro-indicator"></span>
+                        Kiro
+                    </h4>
+                    <p id="kiro-status">检查中...</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- 功能特性 -->
+        <div class="features">
+            <div class="feature-card">
+                <div class="feature-icon">🌍</div>
+                <h3>全球 CDN 加速</h3>
+                <p>基于 Cloudflare Workers，200+ 边缘节点，毫秒级响应</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon">🔄</div>
+                <h3>智能负载均衡</h3>
+                <p>多账号自动轮询，LRU 算法优化，最大化可用性</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon">🔒</div>
+                <h3>安全可靠</h3>
+                <p>Token 加密存储，请求签名验证，完整的访问控制</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon">📊</div>
+                <h3>使用统计</h3>
+                <p>实时监控请求量、成功率，配额使用一目了然</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon">🔧</div>
+                <h3>易于管理</h3>
+                <p>Web 可视化管理界面，账号管理、配置调整轻松搞定</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon">💰</div>
+                <h3>完全免费</h3>
+                <p>基于 Cloudflare 免费计划，每天 10 万次请求，无需绑卡</p>
+            </div>
+        </div>
+
+        <!-- API 端点 -->
+        <div class="status-card">
+            <h2>🔗 API 端点</h2>
+            <div style="background: #f8f9fa; padding: 20px; border-radius: 8px; margin-top: 20px;">
+                <p style="margin-bottom: 10px;"><strong>服务地址：</strong></p>
+                <code id="api-base-url" style="background: white; padding: 8px 12px; border-radius: 4px; display: inline-block;">https://ai-api-proxy.2358314123.workers.dev</code>
+                
+                <div style="margin-top: 20px;">
+                    <p style="margin-bottom: 10px;"><strong>支持的端点：</strong></p>
+                    <ul style="list-style: none; padding-left: 0;">
+                        <li style="padding: 8px 0; border-bottom: 1px solid #e5e7eb;">
+                            <code>/v1/*</code> - OpenAI API
+                        </li>
+                        <li style="padding: 8px 0; border-bottom: 1px solid #e5e7eb;">
+                            <code>/anthropic/*</code> - Anthropic (Claude) API
+                        </li>
+                        <li style="padding: 8px 0; border-bottom: 1px solid #e5e7eb;">
+                            <code>/gemini/*</code> - Google Gemini API
+                        </li>
+                        <li style="padding: 8px 0; border-bottom: 1px solid #e5e7eb;">
+                            <code>/kiro/api/v1/*</code> - Kiro (Amazon Q) API
+                        </li>
+                        <li style="padding: 8px 0;">
+                            <code>/health</code> - 健康检查
+                        </li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <!-- 底部 -->
+        <footer class="footer">
+            <p>
+                由 <a href="https://github.com/WHUT666/ai-api-proxy" target="_blank">AI API Proxy</a> 提供支持 · 
+                版本 2.0.0-kiro · 
+                基于 Cloudflare Workers
+            </p>
+            <p style="margin-top: 10px; font-size: 14px;">
+                © 2026 AI API Proxy · 开源免费 · 
+                <a href="https://github.com/WHUT666/ai-api-proxy" target="_blank">查看源码</a>
+            </p>
+        </footer>
+    </div>
+
+    <script>
+        // 检查服务状态
+        async function checkStatus() {
+            try {
+                const response = await fetch('/health');
+                const data = await response.json();
+                
+                if (data.status === 'ok') {
+                    document.getElementById('overall-status').textContent = '正常运行';
+                    
+                    // 检查是否支持 Kiro
+                    if (data.supported && data.supported.includes('kiro')) {
+                        document.getElementById('kiro-status').textContent = '可用';
+                        document.getElementById('kiro-indicator').className = 'status-indicator status-online';
+                    } else {
+                        document.getElementById('kiro-status').textContent = '未配置';
+                        document.getElementById('kiro-indicator').className = 'status-indicator status-offline';
+                    }
+                }
+            } catch (error) {
+                console.error('状态检查失败:', error);
+                document.getElementById('overall-status').textContent = '检查失败';
+            }
+        }
+
+        // 页面加载时检查状态
+        checkStatus();
+        
+        // 每30秒刷新一次状态
+        setInterval(checkStatus, 30000);
+    </script>
+</body>
+</html>

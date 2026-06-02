@@ -42,6 +42,13 @@ const KIRO_ENDPOINTS = {
   models: '/api/v1/models',
 };
 
+// 静态网页文件（Base64 编码）
+const STATIC_FILES = {
+  '/': 'index.html',
+  '/index.html': 'index.html',
+  '/docs.html': 'docs.html',
+};
+
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
@@ -50,6 +57,11 @@ export default {
     // CORS 预检
     if (request.method === 'OPTIONS') {
       return corsResponse();
+    }
+
+    // 静态网页文件
+    if (STATIC_FILES[path]) {
+      return serveStaticFile(path);
     }
 
     // 管理接口
@@ -72,8 +84,8 @@ export default {
       });
     }
 
-    // 根路径
-    if (path === '/') {
+    // API 信息（用于 API 工具调用）
+    if (path === '/api-info') {
       return jsonResponse({
         name: 'AI API Proxy (Kiro Enhanced)',
         version: '2.0.0',
@@ -98,6 +110,51 @@ export default {
     return handleProxyRequest(request, env, path, url);
   }
 };
+
+// 提供静态文件
+function serveStaticFile(path) {
+  // 重定向根路径到 index.html
+  const fileName = path === '/' ? '/index.html' : path;
+  
+  // 这里返回简单的重定向，实际文件通过外部托管
+  // 或者你可以把 HTML 内容内嵌到这里
+  if (fileName === '/index.html') {
+    return new Response(INDEX_HTML, {
+      headers: {
+        'Content-Type': 'text/html; charset=utf-8',
+        'Cache-Control': 'public, max-age=300'
+      }
+    });
+  }
+  
+  if (fileName === '/docs.html') {
+    return new Response(DOCS_HTML, {
+      headers: {
+        'Content-Type': 'text/html; charset=utf-8',
+        'Cache-Control': 'public, max-age=300'
+      }
+    });
+  }
+  
+  return new Response('Not Found', { status: 404 });
+}
+
+// 首页 HTML（简化版，指向外部文件）
+const INDEX_HTML = `<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI API 代理服务</title>
+    <meta http-equiv="refresh" content="0; url=https://github.com/WHUT666/ai-api-proxy">
+</head>
+<body>
+    <p>正在跳转到项目主页...</p>
+    <p>如果没有自动跳转，请访问：<a href="https://github.com/WHUT666/ai-api-proxy">https://github.com/WHUT666/ai-api-proxy</a></p>
+</body>
+</html>`;
+
+const DOCS_HTML = INDEX_HTML;
 
 // 处理 Kiro 请求
 async function handleKiroRequest(request, env, path, url) {
