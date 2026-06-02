@@ -1,0 +1,616 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI API 代理 - 管理面板</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .header {
+            background: white;
+            border-radius: 10px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+
+        .header h1 {
+            color: #667eea;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            color: #666;
+        }
+
+        .card {
+            background: white;
+            border-radius: 10px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+
+        .card h2 {
+            color: #333;
+            margin-bottom: 15px;
+            border-bottom: 2px solid #667eea;
+            padding-bottom: 10px;
+        }
+
+        .form-group {
+            margin-bottom: 15px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 5px;
+            color: #333;
+            font-weight: 500;
+        }
+
+        .form-group input,
+        .form-group select {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            font-size: 14px;
+        }
+
+        .form-group input:focus,
+        .form-group select:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            font-size: 14px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .btn-primary {
+            background: #667eea;
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: #5568d3;
+        }
+
+        .btn-danger {
+            background: #f56565;
+            color: white;
+        }
+
+        .btn-danger:hover {
+            background: #e53e3e;
+        }
+
+        .btn-success {
+            background: #48bb78;
+            color: white;
+        }
+
+        .btn-success:hover {
+            background: #38a169;
+        }
+
+        .account-list {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 15px;
+            margin-top: 20px;
+        }
+
+        .account-item {
+            background: #f7fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            padding: 15px;
+            position: relative;
+        }
+
+        .account-item.enabled {
+            border-left: 4px solid #48bb78;
+        }
+
+        .account-item.disabled {
+            border-left: 4px solid #f56565;
+            opacity: 0.7;
+        }
+
+        .account-item h3 {
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 16px;
+        }
+
+        .account-info {
+            font-size: 13px;
+            color: #666;
+            margin-bottom: 5px;
+        }
+
+        .account-actions {
+            margin-top: 10px;
+            display: flex;
+            gap: 10px;
+        }
+
+        .status-badge {
+            display: inline-block;
+            padding: 3px 8px;
+            border-radius: 3px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+
+        .status-badge.active {
+            background: #c6f6d5;
+            color: #22543d;
+        }
+
+        .status-badge.inactive {
+            background: #fed7d7;
+            color: #742a2a;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-top: 20px;
+        }
+
+        .stat-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 8px;
+            text-align: center;
+        }
+
+        .stat-card h3 {
+            font-size: 32px;
+            margin-bottom: 5px;
+        }
+
+        .stat-card p {
+            font-size: 14px;
+            opacity: 0.9;
+        }
+
+        .alert {
+            padding: 12px;
+            border-radius: 5px;
+            margin-bottom: 15px;
+            display: none;
+        }
+
+        .alert.success {
+            background: #c6f6d5;
+            color: #22543d;
+            border: 1px solid #9ae6b4;
+        }
+
+        .alert.error {
+            background: #fed7d7;
+            color: #742a2a;
+            border: 1px solid #fc8181;
+        }
+
+        .alert.show {
+            display: block;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #666;
+        }
+
+        .tabs {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+
+        .tab {
+            padding: 10px 20px;
+            background: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: all 0.3s;
+        }
+
+        .tab.active {
+            background: #667eea;
+            color: white;
+        }
+
+        .tab:hover:not(.active) {
+            background: #f7fafc;
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🚀 AI API 代理管理面板</h1>
+            <p>多账号管理 | Token 自动刷新 | 负载均衡</p>
+        </div>
+
+        <div class="alert" id="alert"></div>
+
+        <div class="tabs">
+            <button class="tab active" onclick="switchTab('dashboard')">仪表盘</button>
+            <button class="tab" onclick="switchTab('accounts')">账号管理</button>
+            <button class="tab" onclick="switchTab('add')">添加账号</button>
+            <button class="tab" onclick="switchTab('settings')">设置</button>
+        </div>
+
+        <!-- 仪表盘 -->
+        <div id="dashboard" class="tab-content active">
+            <div class="card">
+                <h2>📊 统计概览</h2>
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <h3 id="totalAccounts">0</h3>
+                        <p>总账号数</p>
+                    </div>
+                    <div class="stat-card">
+                        <h3 id="activeAccounts">0</h3>
+                        <p>活跃账号</p>
+                    </div>
+                    <div class="stat-card">
+                        <h3 id="totalRequests">0</h3>
+                        <p>总请求数</p>
+                    </div>
+                    <div class="stat-card">
+                        <h3 id="successRate">0%</h3>
+                        <p>成功率</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 账号管理 -->
+        <div id="accounts" class="tab-content">
+            <div class="card">
+                <h2>📋 账号列表</h2>
+                <div id="accountList" class="account-list">
+                    <div class="loading">正在加载...</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 添加账号 -->
+        <div id="add" class="tab-content">
+            <div class="card">
+                <h2>➕ 添加新账号</h2>
+                <form id="addAccountForm">
+                    <div class="form-group">
+                        <label>服务商</label>
+                        <select id="provider" required>
+                            <option value="openai">OpenAI</option>
+                            <option value="anthropic">Anthropic (Claude)</option>
+                            <option value="gemini">Google Gemini</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>邮箱</label>
+                        <input type="email" id="email" required placeholder="account@example.com">
+                    </div>
+                    <div class="form-group">
+                        <label>Access Token</label>
+                        <input type="text" id="accessToken" required placeholder="sk-...">
+                    </div>
+                    <div class="form-group">
+                        <label>Refresh Token (可选)</label>
+                        <input type="text" id="refreshToken" placeholder="用于自动刷新">
+                    </div>
+                    <div class="form-group">
+                        <label>
+                            <input type="checkbox" id="enabled" checked>
+                            启用此账号
+                        </label>
+                    </div>
+                    <button type="submit" class="btn btn-primary">添加账号</button>
+                </form>
+            </div>
+        </div>
+
+        <!-- 设置 -->
+        <div id="settings" class="tab-content">
+            <div class="card">
+                <h2>⚙️ 系统设置</h2>
+                <div class="form-group">
+                    <label>管理员密钥</label>
+                    <input type="password" id="adminKey" placeholder="用于 API 调用认证">
+                </div>
+                <div class="form-group">
+                    <label>Worker 地址</label>
+                    <input type="text" id="workerUrl" placeholder="https://your-worker.workers.dev">
+                </div>
+                <button class="btn btn-success" onclick="saveSettings()">保存设置</button>
+            </div>
+
+            <div class="card">
+                <h2>📖 使用说明</h2>
+                <div style="line-height: 1.8; color: #666;">
+                    <p><strong>1. 配置管理员密钥：</strong>在 Cloudflare Workers 环境变量中设置 <code>ADMIN_KEY</code></p>
+                    <p><strong>2. 添加账号：</strong>填写服务商、邮箱和 Token 信息</p>
+                    <p><strong>3. 使用代理：</strong>将 API 请求发送到 Worker 地址的对应端点</p>
+                    <p><strong>示例：</strong></p>
+                    <pre style="background: #f7fafc; padding: 10px; border-radius: 5px; overflow-x: auto;">
+# OpenAI
+curl https://your-worker.workers.dev/v1/chat/completions
+
+# Anthropic
+curl https://your-worker.workers.dev/anthropic/v1/messages
+
+# Gemini
+curl https://your-worker.workers.dev/gemini/v1beta/models</pre>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 全局配置
+        let config = {
+            adminKey: localStorage.getItem('adminKey') || '',
+            workerUrl: localStorage.getItem('workerUrl') || window.location.origin
+        };
+
+        // 初始化
+        document.addEventListener('DOMContentLoaded', () => {
+            loadSettings();
+            loadAccounts();
+            loadStats();
+            
+            // 定期刷新统计
+            setInterval(() => {
+                loadAccounts();
+                loadStats();
+            }, 30000);
+        });
+
+        // 切换标签页
+        function switchTab(tabName) {
+            document.querySelectorAll('.tab').forEach(tab => tab.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+            
+            event.target.classList.add('active');
+            document.getElementById(tabName).classList.add('active');
+        }
+
+        // 加载设置
+        function loadSettings() {
+            document.getElementById('adminKey').value = config.adminKey;
+            document.getElementById('workerUrl').value = config.workerUrl;
+        }
+
+        // 保存设置
+        function saveSettings() {
+            config.adminKey = document.getElementById('adminKey').value;
+            config.workerUrl = document.getElementById('workerUrl').value;
+            
+            localStorage.setItem('adminKey', config.adminKey);
+            localStorage.setItem('workerUrl', config.workerUrl);
+            
+            showAlert('设置已保存', 'success');
+        }
+
+        // API 请求辅助函数
+        async function apiRequest(endpoint, options = {}) {
+            const url = `${config.workerUrl}${endpoint}`;
+            const headers = {
+                'Authorization': `Bearer ${config.adminKey}`,
+                'Content-Type': 'application/json',
+                ...options.headers
+            };
+            
+            try {
+                const response = await fetch(url, { ...options, headers });
+                const data = await response.json();
+                
+                if (!response.ok) {
+                    throw new Error(data.error || '请求失败');
+                }
+                
+                return data;
+            } catch (error) {
+                showAlert(error.message, 'error');
+                throw error;
+            }
+        }
+
+        // 加载账号列表
+        async function loadAccounts() {
+            try {
+                const accounts = await apiRequest('/admin/accounts');
+                displayAccounts(accounts);
+            } catch (error) {
+                document.getElementById('accountList').innerHTML = 
+                    '<div class="loading">加载失败，请检查管理员密钥和 Worker 地址</div>';
+            }
+        }
+
+        // 显示账号列表
+        function displayAccounts(accounts) {
+            const container = document.getElementById('accountList');
+            
+            if (accounts.length === 0) {
+                container.innerHTML = '<div class="loading">暂无账号，请添加</div>';
+                return;
+            }
+            
+            container.innerHTML = accounts.map(account => `
+                <div class="account-item ${account.enabled ? 'enabled' : 'disabled'}">
+                    <h3>${account.email}</h3>
+                    <div class="account-info">
+                        <span class="status-badge ${account.enabled ? 'active' : 'inactive'}">
+                            ${account.enabled ? '✓ 已启用' : '✗ 已禁用'}
+                        </span>
+                    </div>
+                    <div class="account-info">服务商：${account.provider}</div>
+                    <div class="account-info">ID：${account.id}</div>
+                    ${account.lastUsed ? `<div class="account-info">最后使用：${new Date(account.lastUsed).toLocaleString()}</div>` : ''}
+                    <div class="account-actions">
+                        <button class="btn btn-success" onclick="toggleAccount('${account.id}', ${!account.enabled})">
+                            ${account.enabled ? '禁用' : '启用'}
+                        </button>
+                        <button class="btn btn-primary" onclick="refreshToken('${account.id}')">刷新Token</button>
+                        <button class="btn btn-danger" onclick="deleteAccount('${account.id}')">删除</button>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        // 加载统计信息
+        async function loadStats() {
+            try {
+                const [accounts, stats] = await Promise.all([
+                    apiRequest('/admin/accounts'),
+                    apiRequest('/admin/stats')
+                ]);
+                
+                const totalAccounts = accounts.length;
+                const activeAccounts = accounts.filter(a => a.enabled).length;
+                
+                let totalRequests = 0;
+                let successRequests = 0;
+                
+                Object.values(stats).forEach(s => {
+                    totalRequests += s.totalRequests || 0;
+                    successRequests += s.successRequests || 0;
+                });
+                
+                const successRate = totalRequests > 0 
+                    ? Math.round(successRequests / totalRequests * 100) 
+                    : 0;
+                
+                document.getElementById('totalAccounts').textContent = totalAccounts;
+                document.getElementById('activeAccounts').textContent = activeAccounts;
+                document.getElementById('totalRequests').textContent = totalRequests;
+                document.getElementById('successRate').textContent = successRate + '%';
+            } catch (error) {
+                // 忽略统计加载错误
+            }
+        }
+
+        // 添加账号
+        document.getElementById('addAccountForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const account = {
+                provider: document.getElementById('provider').value,
+                email: document.getElementById('email').value,
+                accessToken: document.getElementById('accessToken').value,
+                refreshToken: document.getElementById('refreshToken').value || undefined,
+                enabled: document.getElementById('enabled').checked
+            };
+            
+            try {
+                await apiRequest('/admin/accounts', {
+                    method: 'POST',
+                    body: JSON.stringify(account)
+                });
+                
+                showAlert('账号添加成功', 'success');
+                e.target.reset();
+                switchTab('accounts');
+                loadAccounts();
+                loadStats();
+            } catch (error) {
+                // Error already shown
+            }
+        });
+
+        // 切换账号状态
+        async function toggleAccount(id, enabled) {
+            try {
+                await apiRequest(`/admin/accounts/${id}`, {
+                    method: 'PUT',
+                    body: JSON.stringify({ enabled })
+                });
+                
+                showAlert('账号状态已更新', 'success');
+                loadAccounts();
+                loadStats();
+            } catch (error) {
+                // Error already shown
+            }
+        }
+
+        // 刷新 Token
+        async function refreshToken(id) {
+            try {
+                await apiRequest(`/admin/refresh/${id}`, { method: 'POST' });
+                showAlert('Token 刷新成功', 'success');
+                loadAccounts();
+            } catch (error) {
+                // Error already shown
+            }
+        }
+
+        // 删除账号
+        async function deleteAccount(id) {
+            if (!confirm('确定要删除此账号吗？')) return;
+            
+            try {
+                await apiRequest(`/admin/accounts/${id}`, { method: 'DELETE' });
+                showAlert('账号已删除', 'success');
+                loadAccounts();
+                loadStats();
+            } catch (error) {
+                // Error already shown
+            }
+        }
+
+        // 显示提示
+        function showAlert(message, type) {
+            const alert = document.getElementById('alert');
+            alert.textContent = message;
+            alert.className = `alert ${type} show`;
+            
+            setTimeout(() => {
+                alert.classList.remove('show');
+            }, 3000);
+        }
+    </script>
+</body>
+</html>
