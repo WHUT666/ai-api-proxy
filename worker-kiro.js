@@ -106,8 +106,11 @@ export default {
       });
     }
 
-    // 其他 API 代理（OpenAI/Anthropic/Gemini）
-    return handleProxyRequest(request, env, path, url);
+    // 拒绝未认证的请求
+    return jsonResponse({ 
+      error: 'Invalid endpoint',
+      message: 'Please check the API documentation'
+    }, 404);
   }
 };
 
@@ -358,10 +361,22 @@ async function markAccountNeedsRefresh(env, accountId) {
 // 管理接口
 async function handleAdminRequest(request, env, path) {
   const authHeader = request.headers.get('Authorization');
-  const adminKey = env.ADMIN_KEY || 'admin-secret-key';
+  const adminKey = env.ADMIN_KEY;
   
+  // 检查是否设置了管理员密钥
+  if (!adminKey) {
+    return jsonResponse({ 
+      error: 'Admin access disabled',
+      message: 'Please set ADMIN_KEY environment variable in Cloudflare Workers settings'
+    }, 503);
+  }
+  
+  // 验证认证
   if (!authHeader || authHeader !== `Bearer ${adminKey}`) {
-    return jsonResponse({ error: 'Unauthorized' }, 401);
+    return jsonResponse({ 
+      error: 'Unauthorized',
+      message: 'Invalid or missing admin key'
+    }, 401);
   }
 
   const method = request.method;
