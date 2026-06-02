@@ -1,0 +1,9 @@
+name = "ai-api-proxy"
+main = "worker.js"
+compatibility_date = "2024-01-01"
+
+# Cloudflare Workers 配置
+# 文档: https://developers.cloudflare.com/workers/
+
+[env.production]
+name = "ai-api-proxy"
