@@ -1,12 +1,17 @@
 const express = require('express');
 const { createProxyMiddleware } = require('http-proxy-middleware');
 const cors = require('cors');
+const kiroProxy = require('./kiro-proxy');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
 // 启用CORS
 app.use(cors());
+
+// Kiro 反向代理与管理路由 (仅对它们应用 express.json() 中间件以避免干扰其他代理的 raw stream 转发)
+app.use('/kiro', express.json(), kiroProxy.router);
+app.use('/admin', express.json(), kiroProxy.adminRouter);
 
 // 健康检查端点
 app.get('/health', (req, res) => {
@@ -76,17 +81,21 @@ app.use('/gemini', createProxyMiddleware({
 app.get('/', (req, res) => {
   res.json({
     name: 'AI API Proxy',
-    version: '1.0.0',
+    version: '2.0.0-vps-kiro',
     endpoints: {
       openai: '/v1/*',
       anthropic: '/anthropic/*',
       gemini: '/gemini/*',
+      kiro: '/kiro/v1/*',
+      admin: '/admin/*',
       health: '/health'
     },
     usage: {
       openai: 'Use /v1/chat/completions with your OpenAI API key in Authorization header',
       anthropic: 'Use /anthropic/v1/messages with your API key in x-api-key header',
-      gemini: 'Use /gemini/v1beta/models/* with your API key as query parameter'
+      gemini: 'Use /gemini/v1beta/models/* with your API key as query parameter',
+      kiro: 'Use /kiro/v1/chat/completions with compatible models (gpt-4o, claude-3-5-sonnet)',
+      admin: 'Use admin endpoints with your ADMIN_KEY in Authorization Bearer'
     }
   });
 });
