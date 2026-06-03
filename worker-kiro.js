@@ -543,6 +543,133 @@ async function handleKiroRequest(request, env, path, url) {
   }
 }
 
+// 将 Kiro 的 AWS Event Stream 二进制原始字节流转换为标准 OpenAI 兼容的 SSE Stream 响应
+function handleKiroStreamResponse(kiroResponse, openaiRequest) {
+  const { readable, writable } = new TransformStream();
+  const writer = writable.getWriter();
+  const encoder = new TextEncoder();
+  const requestId = `chatcmpl-${generateUUID()}`;
+
+  (async () => {
+    let buffer = new Uint8Array(0);
+    const reader = kiroResponse.body.getReader();
+    const textDecoder = new TextDecoder();
+
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        const newBuffer = new Uint8Array(buffer.length + value.length);
+        newBuffer.set(buffer);
+        newBuffer.set(value, buffer.length);
+        buffer = newBuffer;
+
+        while (buffer.length >= 16) {
+          const totalLength = (buffer[0] << 24) | (buffer[1] << 16) | (buffer[2] << 8) | buffer[3];
+          if (buffer.length < totalLength) break;
+
+          const headersLength = (buffer[4] << 24) | (buffer[5] << 16) | (buffer[6] << 8) | buffer[7];
+          
+          const headersBuffer = buffer.subarray(12, 12 + headersLength);
+          let eventType = '';
+          let offset = 0;
+          while (offset < headersBuffer.length) {
+            const nameLen = headersBuffer[offset];
+            offset++;
+            if (offset + nameLen > headersBuffer.length) break;
+            const name = textDecoder.decode(headersBuffer.slice(offset, offset + nameLen));
+            offset += nameLen;
+            if (offset >= headersBuffer.length) break;
+            const valueType = headersBuffer[offset];
+            offset++;
+            if (valueType === 7) {
+              if (offset + 2 > headersBuffer.length) break;
+              const valueLen = (headersBuffer[offset] << 8) | headersBuffer[offset + 1];
+              offset += 2;
+              if (offset + valueLen > headersBuffer.length) break;
+              const value = textDecoder.decode(headersBuffer.slice(offset, offset + valueLen));
+              offset += valueLen;
+              if (name === ':event-type') {
+                eventType = value;
+                break;
+              }
+            } else {
+              const skipSizes = { 0: 0, 1: 0, 2: 1, 3: 2, 4: 4, 5: 8, 8: 8, 9: 16 };
+              if (valueType === 6) {
+                if (offset + 2 > headersBuffer.length) break;
+                const len = (headersBuffer[offset] << 8) | headersBuffer[offset + 1];
+                offset += 2 + len;
+              } else if (skipSizes[valueType] !== undefined) {
+                offset += skipSizes[valueType];
+              } else {
+                break;
+              }
+            }
+          }
+
+          const payloadStart = 12 + headersLength;
+          const payloadEnd = totalLength - 4;
+
+          if (payloadStart < payloadEnd) {
+            const payloadBytes = buffer.subarray(payloadStart, payloadEnd);
+            try {
+              const payloadText = textDecoder.decode(payloadBytes);
+              const event = JSON.parse(payloadText);
+
+              let content = '';
+              if (eventType === 'assistantResponseEvent' || event.assistantResponseEvent) {
+                const assistantResp = event.assistantResponseEvent || event;
+                if (assistantResp.content) content = assistantResp.content;
+              } else if (eventType === 'codeEvent' || event.codeEvent) {
+                const codeResp = event.codeEvent || event;
+                if (codeResp.content) content = codeResp.content;
+              }
+
+              if (content) {
+                const streamChunk = {
+                  id: requestId,
+                  object: 'chat.completion.chunk',
+                  created: Math.floor(Date.now() / 1000),
+                  model: openaiRequest.model || 'gpt-4o',
+                  choices: [{ index: 0, delta: { content }, finish_reason: null }]
+                };
+                await writer.write(encoder.encode(`data: ${JSON.stringify(streamChunk)}\n\n`));
+              }
+            } catch (e) {}
+          }
+          buffer = buffer.subarray(totalLength);
+        }
+      }
+
+      const finalChunk = {
+        id: requestId,
+        object: 'chat.completion.chunk',
+        created: Math.floor(Date.now() / 1000),
+        model: openaiRequest.model || 'gpt-4o',
+        choices: [{ index: 0, delta: {}, finish_reason: 'stop' }]
+      };
+      await writer.write(encoder.encode(`data: ${JSON.stringify(finalChunk)}\n\n`));
+      await writer.write(encoder.encode('data: [DONE]\n\n'));
+    } catch (err) {
+      console.error('[Stream error]', err);
+    } finally {
+      try {
+        await writer.close();
+      } catch (e) {}
+    }
+  })();
+
+  return new Response(readable, {
+    headers: {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      'Connection': 'keep-alive',
+      'Access-Control-Allow-Origin': '*'
+    }
+  });
+}
+
 // 处理 OpenAI 格式的 Kiro 聊天请求
 async function handleKiroChatCompletion(request, env) {
   try {
@@ -676,10 +803,7 @@ async function handleKiroChatCompletion(request, env) {
           
           // 处理流式响应
           if (openaiRequest.stream) {
-            const proxyResponse = new Response(retryResponse.body, retryResponse);
-            proxyResponse.headers.set('Access-Control-Allow-Origin', '*');
-            proxyResponse.headers.set('Content-Type', 'text/event-stream');
-            return proxyResponse;
+            return handleKiroStreamResponse(retryResponse, openaiRequest);
           } else {
             // 重新解析响应（复制主流程的逻辑）
             const arrayBuffer = await retryResponse.arrayBuffer();
@@ -775,6 +899,9 @@ async function handleKiroChatCompletion(request, env) {
     
     // 解析 Kiro 响应（AWS Event Stream 格式）
     // Kiro API 返回的是二进制事件流，需要解析每个事件
+    if (openaiRequest.stream) {
+      return handleKiroStreamResponse(kiroResponse, openaiRequest);
+    }
     const arrayBuffer = await kiroResponse.arrayBuffer();
     const buffer = new Uint8Array(arrayBuffer);
     
