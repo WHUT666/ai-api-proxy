@@ -118,7 +118,7 @@ function openaiToKiro(request, profileArn) {
     systemPrompt = `[Context: Current time is ${timestamp}]\n\n${systemPrompt}`;
   }
   
-  // 构建历史消息（符合 Kiro 规范）
+  // 构建历史消息
   const history = [];
   
   for (let i = 0; i < nonSystemMessages.length - 1; i++) {
@@ -128,8 +128,11 @@ function openaiToKiro(request, profileArn) {
       history.push({
         userInputMessage: {
           content: typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content),
-          origin: 'AI_EDITOR',
-          modelId: modelId
+          userInputMessageContext: {
+            appStudioState: {
+              programmingLanguage: { languageName: 'plaintext' }
+            }
+          }
         }
       });
     } else if (msg.role === 'assistant') {
@@ -156,22 +159,24 @@ function openaiToKiro(request, profileArn) {
     currentUserMessage = `${systemPrompt}\n\n${currentUserMessage}`;
   }
   
-  // 构建 Kiro payload（符合 AWS CodeWhisperer 规范）
+  // 构建 Kiro payload
   const payload = {
     conversationState: {
-      agentContinuationId: generateUUID(),
-      agentTaskType: 'vibe',
-      chatTriggerType: 'MANUAL',
-      conversationId: generateUUID(),
       currentMessage: {
         userInputMessage: {
           content: currentUserMessage,
-          origin: 'AI_EDITOR',
-          modelId: modelId
+          userInputMessageContext: {
+            appStudioState: {
+              programmingLanguage: { languageName: 'plaintext' }
+            }
+          }
         }
       },
-      history: history.length > 0 ? history : undefined
-    }
+      chatTriggerType: 'MANUAL',
+      history: history
+    },
+    origin: 'AI_EDITOR',
+    modelId: modelId
   };
   
   // 添加 profileArn（如果有）
@@ -220,21 +225,15 @@ function generateUUID() {
 //   };
 // }
 
-// Kiro API 端点配置（正确的 AWS CodeWhisperer 端点）
-const KIRO_ENDPOINTS = [
-  {
-    url: 'https://codewhisperer.us-east-1.amazonaws.com/generateAssistantResponse',
-    origin: 'AI_EDITOR',
-    amzTarget: 'AmazonCodeWhispererStreamingService.GenerateAssistantResponse',
-    name: 'CodeWhisperer'
-  },
-  {
-    url: 'https://q.us-east-1.amazonaws.com/generateAssistantResponse',
-    origin: 'AI_EDITOR',
-    amzTarget: 'AmazonCodeWhispererStreamingService.GenerateAssistantResponse',
-    name: 'AmazonQ'
-  }
-];
+// Kiro API 端点
+const KIRO_ENDPOINTS = {
+  chat: '/api/v1/streaming-conversations',           // 流式对话
+  listConversations: '/api/v1/conversations',        // 对话列表
+  generatePlan: '/api/v1/generate-plan',             // 生成计划
+  generateCodeSnippet: '/api/v1/generate-code-snippet',
+  userContext: '/api/v1/user-context',
+  models: '/api/v1/models',
+};
 
 // 静态网页文件（Base64 编码）
 const STATIC_FILES = {
@@ -360,7 +359,7 @@ async function handleKiroRequest(request, env, path, url) {
     return handleKiroChatCompletion(request, env);
   }
   
-  // 获取可用账号
+  // 其他 Kiro 原生接口的代理（保持原有逻辑）
   const account = await getAvailableAccount(env, 'kiro');
   
   if (!account) {
@@ -372,6 +371,7 @@ async function handleKiroRequest(request, env, path, url) {
 
   // 检查 Token 是否过期
   if (account.expiresAt && account.expiresAt < Date.now() + 300000) {
+    // 5分钟内过期，尝试刷新
     await refreshKiroToken(env, account.id);
     const refreshedAccount = await getAccount(env, account.id);
     if (refreshedAccount) {
@@ -379,145 +379,58 @@ async function handleKiroRequest(request, env, path, url) {
     }
   }
 
-  // 确定正确的 Kiro API 端点
+  // 确定 Kiro API 端点
   const region = account.region || 'us-east-1';
+  const kiroBaseUrl = `https://codewhisperer.${region}.amazonaws.com`;
   
-  // 使用正确的 generateAssistantResponse 端点
-  const kiroUrl = `https://codewhisperer.${region}.amazonaws.com/generateAssistantResponse`;
+  // 构建代理请求 URL（移除 /kiro 前缀）
+  const kiroPath = path.replace('/kiro', '');
+  const proxyUrl = `${kiroBaseUrl}${kiroPath}${url.search}`;
+
+  // 构建请求头
+  const headers = new Headers(request.headers);
   
-  // 解析请求体
-  let requestBody;
-  try {
-    requestBody = await request.json();
-  } catch (e) {
-    return jsonResponse({
-      error: 'Invalid JSON',
-      message: 'Request body must be valid JSON'
-    }, 400);
+  // 设置认证头
+  if (account.ssoToken) {
+    headers.set('Authorization', `Bearer ${account.ssoToken}`);
+  } else if (account.accessToken) {
+    headers.set('Authorization', `Bearer ${account.accessToken}`);
   }
-
-  // 确保请求体包含必要的 conversationState 结构
-  if (!requestBody.conversationState) {
-    return jsonResponse({
-      error: 'Invalid request',
-      message: 'Missing conversationState in request body'
-    }, 400);
-  }
-
-  // 添加 profileArn
-  const profileArn = resolveProfileArn(account);
-  requestBody.profileArn = profileArn;
-
-  // 构建正确的请求头
-  const headers = {
-    'Content-Type': 'application/json',
-    'Authorization': `Bearer ${account.accessToken || account.ssoToken}`,
-    'x-amzn-kiro-agent-mode': 'spec',
-    'x-amz-user-agent': getKiroAmzUserAgent(),
-    'user-agent': getKiroUserAgent(),
-    'amz-sdk-invocation-id': generateUUID(),
-    'amz-sdk-request': 'attempt=1; max=3'
-  };
+  
+  // 设置必要的 Kiro 请求头
+  headers.set('Host', new URL(proxyUrl).host);
+  headers.set('x-amzn-codewhisperer-optout', 'false');
+  
+  // 移除 Cloudflare 特有头
+  headers.delete('cf-connecting-ip');
+  headers.delete('cf-ray');
+  headers.delete('cf-visitor');
 
   try {
-    const response = await fetch(kiroUrl, {
-      method: 'POST',
+    const proxyRequest = new Request(proxyUrl, {
+      method: request.method,
       headers: headers,
-      body: JSON.stringify(requestBody)
+      body: request.body
     });
+
+    const response = await fetch(proxyRequest);
     
-    const statusCode = response.status;
-    
-    // 记录请求结果
-    await recordRequest(env, account.id, response.ok, null, statusCode);
-    
-    // 检查认证错误
-    if (statusCode === 401 || statusCode === 403) {
-      const excludeIds = new Set([account.id]);
-      const nextAccount = await getAvailableAccount(env, 'kiro', excludeIds);
+    // 检查是否需要刷新 Token（401/403）
+    if (response.status === 401 || response.status === 403) {
+      await markAccountNeedsRefresh(env, account.id);
       
-      if (nextAccount && nextAccount.id !== account.id) {
-        console.log(`[Kiro] Auth failed for ${account.email || account.id}, retrying with ${nextAccount.email || nextAccount.id}`);
-        
-        const retryHeaders = {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${nextAccount.accessToken || nextAccount.ssoToken}`,
-          'x-amzn-kiro-agent-mode': 'spec',
-          'x-amz-user-agent': getKiroAmzUserAgent(),
-          'user-agent': getKiroUserAgent(),
-          'amz-sdk-invocation-id': generateUUID(),
-          'amz-sdk-request': 'attempt=2; max=3'
-        };
-        
-        const retryResponse = await fetch(kiroUrl, {
-          method: 'POST',
-          headers: retryHeaders,
-          body: JSON.stringify(requestBody)
-        });
-        
-        await recordRequest(env, nextAccount.id, retryResponse.ok, null, retryResponse.status);
-        
-        if (retryResponse.ok) {
-          await updateAccountLastUsed(env, nextAccount.id);
-          const proxyResponse = new Response(retryResponse.body, retryResponse);
-          proxyResponse.headers.set('Access-Control-Allow-Origin', '*');
-          proxyResponse.headers.set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-          proxyResponse.headers.set('Access-Control-Allow-Headers', '*');
-          proxyResponse.headers.set('Content-Type', 'text/event-stream');
-          return proxyResponse;
-        }
-      }
-      
-      const errorText = await response.text();
       return jsonResponse({
         error: 'Authentication failed',
-        message: 'Token expired or invalid for all available accounts',
-        accountId: account.id,
-        details: errorText
+        message: 'Token expired or invalid, please refresh token',
+        accountId: account.id
       }, 401);
     }
+
+    // 记录使用统计
+    await recordRequest(env, account.id, response.ok);
+    await updateAccountLastUsed(env, account.id);
     
-    // 检查其他可恢复错误（配额/限流）
-    if (statusCode === 402 || statusCode === 429) {
-      const excludeIds = new Set([account.id]);
-      const nextAccount = await getAvailableAccount(env, 'kiro', excludeIds);
-      
-      if (nextAccount && nextAccount.id !== account.id) {
-        console.log(`[Kiro] Quota/Rate limit for ${account.email || account.id}, retrying with ${nextAccount.email || nextAccount.id}`);
-        
-        const retryHeaders = {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${nextAccount.accessToken || nextAccount.ssoToken}`,
-          'x-amzn-kiro-agent-mode': 'spec',
-          'x-amz-user-agent': getKiroAmzUserAgent(),
-          'user-agent': getKiroUserAgent(),
-          'amz-sdk-invocation-id': generateUUID(),
-          'amz-sdk-request': 'attempt=2; max=3'
-        };
-        
-        const retryResponse = await fetch(kiroUrl, {
-          method: 'POST',
-          headers: retryHeaders,
-          body: JSON.stringify(requestBody)
-        });
-        
-        await recordRequest(env, nextAccount.id, retryResponse.ok, null, retryResponse.status);
-        
-        if (retryResponse.ok) {
-          await updateAccountLastUsed(env, nextAccount.id);
-          const proxyResponse = new Response(retryResponse.body, retryResponse);
-          proxyResponse.headers.set('Access-Control-Allow-Origin', '*');
-          proxyResponse.headers.set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-          proxyResponse.headers.set('Access-Control-Allow-Headers', '*');
-          proxyResponse.headers.set('Content-Type', 'text/event-stream');
-          return proxyResponse;
-        }
-      }
-    }
-    
-    // 记录成功的请求
     if (response.ok) {
-      await updateAccountLastUsed(env, account.id);
       await updateKiroUsage(env, account.id);
     }
 
@@ -526,11 +439,10 @@ async function handleKiroRequest(request, env, path, url) {
     proxyResponse.headers.set('Access-Control-Allow-Origin', '*');
     proxyResponse.headers.set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
     proxyResponse.headers.set('Access-Control-Allow-Headers', '*');
-    proxyResponse.headers.set('Content-Type', 'text/event-stream');
     
     return proxyResponse;
   } catch (error) {
-    await recordRequest(env, account.id, false, error.message, 500);
+    await recordRequest(env, account.id, false, error.message);
     return jsonResponse({
       error: 'Proxy error',
       message: error.message
@@ -615,55 +527,11 @@ async function handleKiroChatCompletion(request, env) {
       body: JSON.stringify(kiroPayload)
     });
     
-    // 记录请求结果
-    const statusCode = kiroResponse.status;
-    await recordRequest(env, account.id, kiroResponse.ok, null, statusCode);
-    
     // 检查认证错误
-    if (statusCode === 401 || statusCode === 403) {
-      // 尝试切换到下一个账号
-      const excludeIds = new Set([account.id]);
-      const nextAccount = await getAvailableAccount(env, 'kiro', excludeIds);
+    if (kiroResponse.status === 401 || kiroResponse.status === 403) {
+      await markAccountNeedsRefresh(env, account.id);
       
-      if (nextAccount && nextAccount.id !== account.id) {
-        console.log(`[Kiro] Auth failed for ${account.email || account.id}, retrying with ${nextAccount.email || nextAccount.id}`);
-        
-        // 使用新账号重试
-        const retryHeaders = {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${nextAccount.accessToken || nextAccount.ssoToken}`,
-          'x-amzn-kiro-agent-mode': 'spec',
-          'x-amz-user-agent': getKiroAmzUserAgent(),
-          'user-agent': getKiroUserAgent(),
-          'amz-sdk-invocation-id': generateUUID(),
-          'amz-sdk-request': 'attempt=2; max=3'
-        };
-        
-        const retryPayload = openaiToKiro(openaiRequest, resolveProfileArn(nextAccount));
-        const retryResponse = await fetch(kiroUrl, {
-          method: 'POST',
-          headers: retryHeaders,
-          body: JSON.stringify(retryPayload)
-        });
-        
-        await recordRequest(env, nextAccount.id, retryResponse.ok, null, retryResponse.status);
-        
-        if (retryResponse.ok) {
-          await updateAccountLastUsed(env, nextAccount.id);
-          
-          // 处理流式响应
-          if (openaiRequest.stream) {
-            const proxyResponse = new Response(retryResponse.body, retryResponse);
-            proxyResponse.headers.set('Access-Control-Allow-Origin', '*');
-            proxyResponse.headers.set('Content-Type', 'text/event-stream');
-            return proxyResponse;
-          } else {
-            return await convertKiroToOpenAI(retryResponse, openaiRequest);
-          }
-        }
-      }
-      
-      // 无可用账号或重试失败
+      // 返回更详细的错误信息
       const errorText = await kiroResponse.text();
       return jsonResponse({
         error: 'Authentication failed',
@@ -1203,174 +1071,26 @@ async function updateAccount(env, id, updates) {
   return updated;
 }
 
-// 账号池配置
-const ACCOUNT_POOL_CONFIG = {
-  baseCooldownMs: 60000,          // 60s 基础冷却
-  maxBackoffMultiplier: 1440,     // 最大 1440 倍 = 24h
-  quotaResetMs: 3600000,          // 1h 配额重置
-  probabilisticRetryChance: 0.1   // 10% 概率重试
-};
-
-// 错误类型分类
-const ErrorType = {
-  FATAL: 'fatal',           // 请求本身有问题 → 直接返回客户端，不切号
-  RECOVERABLE: 'recoverable' // 账号问题 → 切换到下一个账号
-};
-
-// 根据 HTTP 状态码分类错误
-function classifyError(statusCode, reason) {
-  // RECOVERABLE: 配额/计费问题
-  if (statusCode === 402) return ErrorType.RECOVERABLE;
-  // RECOVERABLE: Token 过期/无效
-  if (statusCode === 403) return ErrorType.RECOVERABLE;
-  // RECOVERABLE: 限流
-  if (statusCode === 429) return ErrorType.RECOVERABLE;
-  // 400: 根据原因细分
-  if (statusCode === 400) {
-    // 上下文超限 → 所有账号都会失败
-    if (reason === 'CONTENT_LENGTH_EXCEEDS_THRESHOLD') return ErrorType.FATAL;
-    return ErrorType.FATAL;
-  }
-  // 422: 请求格式错误
-  if (statusCode === 422) return ErrorType.FATAL;
-  // 5xx: 服务端错误
-  if (statusCode >= 500) return ErrorType.FATAL;
-  return ErrorType.FATAL;
-}
-
-// 检查账号是否被封禁
-function isSuspended(account) {
-  return typeof account.suspendedAt === 'number' && account.suspendedAt > 0;
-}
-
-// 检查账号配额是否耗尽
-function isQuotaExhausted(account, now = Date.now()) {
-  // 如果配额已重置（过了重置时间），不再视为耗尽
-  if (account.quotaResetAt && account.quotaResetAt <= now) {
-    return false;
-  }
-  // 有明确的耗尽标记
-  if (account.quotaExhaustedAt && account.quotaExhaustedAt > 0) {
-    return true;
-  }
-  // 有配额数据且已用尽
-  if (account.quotaLimit && account.quotaLimit > 0 && (account.quotaUsed || 0) >= account.quotaLimit) {
-    return true;
-  }
-  return false;
-}
-
-// 检查账号是否可用（断路器 + 指数退避 + 概率重试）
-function isAccountAvailable(account, now = Date.now()) {
-  // 检查是否被封禁
-  if (isSuspended(account)) {
-    return false;
-  }
-  
-  // 检查配额是否耗尽
-  if (isQuotaExhausted(account, now)) {
-    return false;
-  }
-  
-  // 检查 token 是否过期（无 refreshToken 时直接判为不可用）
-  if (account.expiresAt && account.expiresAt < now && !account.refreshToken) {
-    return false;
-  }
-  
-  // 检查是否被标记为不可用
-  if (account.enabled === false) {
-    return false;
-  }
-  
-  // 断路器检查：指数退避 + 概率重试
-  const failures = account.errorCount || 0;
-  if (failures > 0 && account.lastUsed) {
-    const timeSinceFailure = now - account.lastUsed;
-    // 指数退避：base * 2^(failures-1)，封顶为 maxBackoffMultiplier
-    const backoffMultiplier = Math.min(Math.pow(2, failures - 1), ACCOUNT_POOL_CONFIG.maxBackoffMultiplier);
-    const effectiveCooldown = ACCOUNT_POOL_CONFIG.baseCooldownMs * backoffMultiplier;
-    
-    if (timeSinceFailure < effectiveCooldown) {
-      // 未超出冷却期，用概率重试
-      if (Math.random() > ACCOUNT_POOL_CONFIG.probabilisticRetryChance) {
-        return false;
-      }
-      console.log(`[AccountPool] Probabilistic retry for ${account.email || account.id} (failures=${failures}, cooldown=${Math.round(effectiveCooldown / 1000)}s)`);
-    }
-  }
-  
-  return true;
-}
-
-// 获取可用账号（支持智能轮询）
-async function getAvailableAccount(env, provider, excludeIds = new Set()) {
+async function getAvailableAccount(env, provider) {
   const { keys } = await env.ACCOUNTS.list();
   const candidates = [];
-  const now = Date.now();
   
   for (const key of keys) {
     const account = await env.ACCOUNTS.get(key.name, 'json');
-    
-    // 跳过不匹配的 provider 和已排除的账号
-    if (!account || account.provider !== provider || excludeIds.has(account.id)) {
-      continue;
-    }
-    
-    // 检查账号是否可用
-    if (isAccountAvailable(account, now)) {
-      const hasValidToken = (account.accessToken || account.ssoToken || account.refreshToken);
-      const notExpired = !account.expiresAt || account.expiresAt > now;
-      
-      // 优先选择有 expiresAt 且未过期的账号
-      if (account.expiresAt && account.expiresAt > now && hasValidToken) {
-        candidates.push({ ...account, priority: 1 });
-      } else if (hasValidToken && notExpired) {
-        // 降级：有 token 但没有 expiresAt 的账号
-        candidates.push({ ...account, priority: 2 });
+    if (account && account.enabled && account.provider === provider) {
+      if (!account.expiresAt || account.expiresAt > Date.now()) {
+        candidates.push(account);
       }
     }
   }
   
-  if (candidates.length === 0) {
-    // 检查是否所有账号都因配额耗尽
-    const allAccounts = [];
-    for (const key of keys) {
-      const account = await env.ACCOUNTS.get(key.name, 'json');
-      if (account && account.provider === provider && !excludeIds.has(account.id)) {
-        allAccounts.push(account);
-      }
-    }
-    
-    const allExhausted = allAccounts.length > 0 && allAccounts.every(a => isQuotaExhausted(a, now));
-    if (allExhausted) {
-      console.log(`[AccountPool] All ${allAccounts.length} accounts quota exhausted`);
-    }
-    
-    return null;
-  }
+  if (candidates.length === 0) return null;
   
-  // 按优先级排序，同优先级按最少使用排序
-  candidates.sort((a, b) => {
-    if (a.priority !== b.priority) return a.priority - b.priority;
-    return (a.lastUsed || 0) - (b.lastUsed || 0);
-  });
-  
-  const selected = candidates[0];
-  
-  // 如果 token 即将过期（30分钟内），尝试自动刷新
-  if (selected.expiresAt && selected.expiresAt - now < 1800000 && selected.refreshToken) {
-    console.log(`[AccountPool] Token expiring soon for ${selected.email || selected.id}, refreshing...`);
-    const refreshResult = await refreshKiroToken(env, selected.id);
-    if (refreshResult.success) {
-      // 重新获取更新后的账号
-      return await env.ACCOUNTS.get(selected.id, 'json');
-    }
-  }
-  
-  return selected;
+  candidates.sort((a, b) => (a.lastUsed || 0) - (b.lastUsed || 0));
+  return candidates[0];
 }
 
-async function recordRequest(env, accountId, success, error = null, statusCode = null) {
+async function recordRequest(env, accountId, success, error = null) {
   const key = `stats:${accountId}`;
   const stats = await env.STATS.get(key, 'json') || {
     totalRequests: 0,
@@ -1387,64 +1107,6 @@ async function recordRequest(env, accountId, success, error = null, statusCode =
   }
   
   await env.STATS.put(key, JSON.stringify(stats));
-  
-  // 更新账号状态
-  const account = await getAccount(env, accountId);
-  if (account) {
-    const now = Date.now();
-    
-    if (success) {
-      // 成功：重置断路器
-      account.errorCount = 0;
-      account.lastUsed = now;
-      account.enabled = true;
-      
-      // 清除配额耗尽标记（如果之前有）
-      if (account.quotaExhaustedAt) {
-        account.quotaExhaustedAt = undefined;
-      }
-    } else {
-      // 失败：根据错误类型处理
-      const errorType = classifyError(statusCode || 500, error);
-      
-      if (errorType === ErrorType.RECOVERABLE) {
-        // 可恢复错误：增加失败计数，触发断路器
-        account.errorCount = (account.errorCount || 0) + 1;
-        account.lastUsed = now;
-        
-        // 配额类错误额外标记
-        const isQuotaError = statusCode === 402 || statusCode === 429;
-        if (isQuotaError) {
-          account.quotaExhaustedAt = now;
-          account.quotaResetAt = now + ACCOUNT_POOL_CONFIG.quotaResetMs;
-        }
-        
-        // 计算退避时间用于日志
-        const backoffMultiplier = Math.min(
-          Math.pow(2, account.errorCount - 1), 
-          ACCOUNT_POOL_CONFIG.maxBackoffMultiplier
-        );
-        const effectiveCooldown = ACCOUNT_POOL_CONFIG.baseCooldownMs * backoffMultiplier;
-        const cooldownStr = effectiveCooldown < 60000 ? `${Math.round(effectiveCooldown / 1000)}s`
-          : effectiveCooldown < 3600000 ? `${Math.round(effectiveCooldown / 60000)}m`
-          : `${Math.round(effectiveCooldown / 3600000)}h`;
-        
-        console.log(`[AccountPool] Account ${account.email || accountId} failure #${account.errorCount}: status=${statusCode || '?'}, cooldown=${cooldownStr}`);
-        
-        // 检查是否需要标记为封禁（连续失败多次）
-        if (account.errorCount >= 5 && (statusCode === 403 || statusCode === 401)) {
-          account.suspendedAt = now;
-          account.suspendReason = 'MULTIPLE_AUTH_FAILURES';
-          account.suspendMessage = `Account suspended after ${account.errorCount} consecutive auth failures`;
-          account.enabled = false;
-          console.warn(`[AccountPool] Account ${account.email || accountId} SUSPENDED (${account.suspendReason})`);
-        }
-      }
-      // FATAL 错误不修改账号状态
-    }
-    
-    await env.ACCOUNTS.put(accountId, JSON.stringify(account));
-  }
 }
 
 async function updateAccountLastUsed(env, id) {
