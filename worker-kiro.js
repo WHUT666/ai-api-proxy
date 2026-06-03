@@ -365,6 +365,11 @@ async function handleKiroRequest(request, env, path, url) {
     return handleKiroChatCompletion(request, env);
   }
   
+  // 检查是否是 Responses 兼容接口
+  if (path === '/kiro/v1/responses' || path === '/kiro/responses') {
+    return handleKiroResponses(request, env);
+  }
+  
   // 获取可用账号
   const account = await getAvailableAccount(env, 'kiro');
   
@@ -1956,3 +1961,241 @@ async function handleKiroDebug(request, env) {
     }, 500);
   }
 }
+
+// Responses 格式转 OpenAI 格式
+function responsesToOpenAIChat(request) {
+  const messages = [];
+  if (request.instructions) {
+    messages.push({ role: 'system', content: request.instructions });
+  }
+
+  if (typeof request.input === 'string') {
+    messages.push({ role: 'user', content: request.input });
+  } else if (Array.isArray(request.input)) {
+    for (const item of request.input) {
+      if (item.type === 'message') {
+        messages.push({
+          role: item.role === 'assistant' ? 'assistant' : 'user',
+          content: typeof item.content === 'string' ? item.content : JSON.stringify(item.content)
+        });
+      }
+    }
+  }
+
+  const chatReq = {
+    model: request.model || 'gpt-4o',
+    messages,
+    stream: request.stream === true
+  };
+  if (request.temperature !== undefined) chatReq.temperature = request.temperature;
+  if (request.max_output_tokens !== undefined) chatReq.max_tokens = request.max_output_tokens;
+  return chatReq;
+}
+
+// OpenAI 响应转 Responses 响应
+function openAIChatToResponsesResponse(response) {
+  const choice = response.choices[0];
+  const output = [{
+    type: 'message',
+    id: `msg_${generateUUID()}`,
+    role: 'assistant',
+    content: [{ type: 'output_text', text: choice.message.content || '' }]
+  }];
+
+  return {
+    id: `resp_${generateUUID()}`,
+    object: 'response',
+    created_at: response.created,
+    model: response.model,
+    output,
+    usage: {
+      input_tokens: response.usage.prompt_tokens,
+      output_tokens: response.usage.completion_tokens,
+      total_tokens: response.usage.total_tokens
+    }
+  };
+}
+
+// 处理 Responses 格式聊天请求
+async function handleKiroResponses(request, env) {
+  try {
+    const responsesRequest = await request.json();
+    const openaiRequest = responsesToOpenAIChat(responsesRequest);
+    
+    // 获取可用的 Kiro 账号
+    const account = await getAvailableAccount(env, 'kiro');
+    if (!account) {
+      return jsonResponse({ error: 'No available Kiro accounts' }, 503);
+    }
+    
+    // 检查 Token 寿命与刷新
+    if (account.expiresAt && account.expiresAt < Date.now() + 300000) {
+      await refreshKiroToken(env, account.id);
+      const refreshed = await getAccount(env, account.id);
+      if (refreshed) Object.assign(account, refreshed);
+    }
+    
+    const profileArn = resolveProfileArn(account);
+    const kiroPayload = openaiToKiro(openaiRequest, profileArn);
+    const region = account.region || 'us-east-1';
+    const kiroUrl = `https://codewhisperer.${region}.amazonaws.com/generateAssistantResponse`;
+    
+    const headers = {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${account.accessToken || account.ssoToken}`,
+      'x-amzn-kiro-agent-mode': 'spec',
+      'x-amz-user-agent': getKiroAmzUserAgent(),
+      'user-agent': getKiroUserAgent(),
+      'amz-sdk-invocation-id': generateUUID(),
+      'amz-sdk-request': 'attempt=1; max=3'
+    };
+    
+    const kiroResponse = await fetch(kiroUrl, {
+      method: 'POST',
+      headers: headers,
+      body: JSON.stringify(kiroPayload)
+    });
+    
+    const statusCode = kiroResponse.status;
+    await recordRequest(env, account.id, kiroResponse.ok, null, statusCode);
+    
+    if (!kiroResponse.ok) {
+      const errorText = await kiroResponse.text();
+      return jsonResponse({ error: 'Kiro API error', message: errorText }, statusCode);
+    }
+    
+    if (openaiRequest.stream) {
+      const { readable, writable } = new TransformStream();
+      const writer = writable.getWriter();
+      const encoder = new TextEncoder();
+      
+      (async () => {
+        let buffer = new Uint8Array(0);
+        const reader = kiroResponse.body.getReader();
+        const textDecoder = new TextDecoder();
+        
+        try {
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            
+            const newBuffer = new Uint8Array(buffer.length + value.length);
+            newBuffer.set(buffer);
+            newBuffer.set(value, buffer.length);
+            buffer = newBuffer;
+            
+            while (buffer.length >= 16) {
+              const totalLength = (buffer[0] << 24) | (buffer[1] << 16) | (buffer[2] << 8) | buffer[3];
+              if (buffer.length < totalLength) break;
+              
+              const headersLength = (buffer[4] << 24) | (buffer[5] << 16) | (buffer[6] << 8) | buffer[7];
+              const eventType = extractEventType(buffer.subarray(12, 12 + headersLength));
+              
+              const payloadStart = 12 + headersLength;
+              const payloadEnd = totalLength - 4;
+              
+              if (payloadStart < payloadEnd) {
+                const payloadBytes = buffer.subarray(payloadStart, payloadEnd);
+                try {
+                  const payloadText = textDecoder.decode(payloadBytes);
+                  const event = JSON.parse(payloadText);
+                  
+                  let content = '';
+                  if (eventType === 'assistantResponseEvent' || event.assistantResponseEvent) {
+                    const assistantResp = event.assistantResponseEvent || event;
+                    if (assistantResp.content) content = assistantResp.content;
+                  } else if (eventType === 'codeEvent' || event.codeEvent) {
+                    const codeResp = event.codeEvent || event;
+                    if (codeResp.content) content = codeResp.content;
+                  }
+                  
+                  if (content) {
+                    const responsesChunk = {
+                      type: 'output_delta',
+                      delta: { type: 'output_text_delta', text: content }
+                    };
+                    await writer.write(encoder.encode(`data: ${JSON.stringify(responsesChunk)}\n\n`));
+                  }
+                } catch (e) {}
+              }
+              buffer = buffer.subarray(totalLength);
+            }
+          }
+          await writer.write(encoder.encode('data: [DONE]\n\n'));
+        } catch (e) {
+        } finally {
+          try { await writer.close(); } catch (e) {}
+        }
+      })();
+      
+      return new Response(readable, {
+        headers: {
+          'Content-Type': 'text/event-stream',
+          'Cache-Control': 'no-cache',
+          'Connection': 'keep-alive',
+          'Access-Control-Allow-Origin': '*'
+        }
+      });
+    } else {
+      // 100% 优雅地复用原厂已高度稳定的 handleKiroChatCompletion 非流式二进制包解析逻辑
+      const simulatedReq = new Request(request.url, {
+        method: 'POST',
+        headers: request.headers,
+        body: JSON.stringify(openaiRequest)
+      });
+      const openaiResponse = await handleKiroChatCompletion(simulatedReq, env);
+      if (openaiResponse.status !== 200) {
+        return openaiResponse;
+      }
+      
+      const openaiResJson = await openaiResponse.json();
+      return jsonResponse(openAIChatToResponsesResponse(openaiResJson));
+    }
+  } catch (error) {
+    return jsonResponse({ error: 'Proxy error', message: error.message }, 500);
+  }
+}
+
+// 提取 AWS Event Stream 的事件类型名称
+function extractEventType(headersBuffer) {
+  const textDecoder = new TextDecoder();
+  let offset = 0;
+  while (offset < headersBuffer.length) {
+    if (offset >= headersBuffer.length) break;
+    const nameLen = headersBuffer[offset];
+    offset++;
+    if (offset + nameLen > headersBuffer.length) break;
+    const name = textDecoder.decode(headersBuffer.slice(offset, offset + nameLen));
+    offset += nameLen;
+    if (offset >= headersBuffer.length) break;
+    const valueType = headersBuffer[offset];
+    offset++;
+    
+    if (valueType === 7) {
+      if (offset + 2 > headersBuffer.length) break;
+      const valueLen = (headersBuffer[offset] << 8) | headersBuffer[offset + 1];
+      offset += 2;
+      if (offset + valueLen > headersBuffer.length) break;
+      const value = textDecoder.decode(headersBuffer.slice(offset, offset + valueLen));
+      offset += valueLen;
+      if (name === ':event-type') {
+        return value;
+      }
+      continue;
+    }
+    
+    const skipSizes = { 0: 0, 1: 0, 2: 1, 3: 2, 4: 4, 5: 8, 8: 8, 9: 16 };
+    if (valueType === 6) {
+      if (offset + 2 > headersBuffer.length) break;
+      const len = (headersBuffer[offset] << 8) | headersBuffer[offset + 1];
+      offset += 2 + len;
+    } else if (skipSizes[valueType] !== undefined) {
+      offset += skipSizes[valueType];
+    } else {
+      break;
+    }
+  }
+  return '';
+}
+
+
