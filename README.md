@@ -23,29 +23,28 @@
 
 ## 🚀 快速开始
 
-### 1. 访问管理后台
+### 方式 1: 在 OpenCode 中使用（推荐）
 
-打开管理后台：https://8b08f538.ai-api-docs-bim.pages.dev/admin.html
+在项目根目录创建 `.opencode/opencode.json`：
 
-### 2. 配置管理员设置
-
-点击"设置"标签，填写：
-
+```json
+{
+  "apiProvider": "openai",
+  "apiKey": "dummy-key",
+  "apiBaseUrl": "https://ai-api-proxy.2358314123.workers.dev/kiro/v1",
+  "model": "gpt-4"
+}
 ```
-管理员密钥：kiro-admin-2024
-Worker 地址：https://ai-api-proxy.2358314123.workers.dev
-```
 
-点击"保存设置"
+完成！现在可以在 OpenCode 中使用 AI 助手了。
 
-### 3. 添加 Kiro 账号
+📖 [详细 OpenCode 配置指南](OPENCODE_INTEGRATION_GUIDE.md) | [快速上手](OPENCODE_QUICK_START.md)
 
-点击"添加 Kiro 账号"，支持：
-- 批量导入 OIDC JSON
-- 单个添加 SSO Token 或 OIDC 认证
+---
 
-### 4. 开始使用
+### 方式 2: 使用 Python/Node.js
 
+#### Python
 ```python
 from openai import OpenAI
 
@@ -55,21 +54,52 @@ client = OpenAI(
 )
 
 response = client.chat.completions.create(
-    model="claude-3-5-sonnet",
+    model="gpt-4",
     messages=[{"role": "user", "content": "Hello!"}]
 )
 
 print(response.choices[0].message.content)
 ```
 
+#### Node.js
+```javascript
+import OpenAI from 'openai';
+
+const client = new OpenAI({
+  apiKey: 'dummy-key',
+  baseURL: 'https://ai-api-proxy.2358314123.workers.dev/kiro/v1'
+});
+
+const response = await client.chat.completions.create({
+  model: 'gpt-4',
+  messages: [{ role: 'user', content: 'Hello!' }]
+});
+
+console.log(response.choices[0].message.content);
+```
+
+---
+
+### 方式 3: 管理账号（可选）
+
+如果你想添加自己的 Kiro 账号：
+
+1. 访问管理后台：https://8b08f538.ai-api-docs-bim.pages.dev/admin.html
+2. 配置管理员密钥：`kiro-admin-2024`
+3. 添加 Kiro 账号（批量导入或单个添加）
+4. 开始使用
+
 ---
 
 ## 📚 文档
 
-- 📖 [用户使用指南](USER_GUIDE.md) - 完整的使用教程
-- 🔧 [快速配置指南](QUICK_SETUP.md) - 3 步快速开始
+- 📖 [OpenCode 集成指南](OPENCODE_INTEGRATION_GUIDE.md) - 在 OpenCode 中使用（推荐）
+- 🚀 [OpenCode 快速开始](OPENCODE_QUICK_START.md) - 3 步完成配置
+- 📘 [用户使用指南](USER_GUIDE.md) - 完整的使用教程
+- 🔧 [快速配置指南](QUICK_SETUP.md) - 快速开始
 - 🐛 [故障排查指南](DIAGNOSTIC_GUIDE.md) - 常见问题解决
 - 📊 [项目总结报告](FINAL_SUMMARY.md) - 完整的项目信息
+- 🔄 [客户问题修复报告](CUSTOMER_FIX_REPORT.md) - 最新修复详情
 
 ---
 
